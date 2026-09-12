@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enterprise Employee Agent — draft spec</title>
+  <style>
+    :root { --ink:#1e293b; --muted:#52606d; --line:#d7dee8; --bg:#f5f7fb; --paper:#fff; --accent:#075985; --good:#14532d; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 system-ui,sans-serif; }
+    main { max-width:1000px; margin:32px auto; padding:0 20px 64px; } article { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:clamp(24px,5vw,58px); }
+    h1,h2,h3 { line-height:1.2; } h2 { margin-top:2.2em; border-top:1px solid var(--line); padding-top:1em; } p,li { max-width:82ch; }
+    .meta,.flow { display:flex; flex-wrap:wrap; gap:8px; align-items:center; } .tag,.step { border:1px solid var(--line); border-radius:99px; padding:5px 10px; font-size:.9rem; } .step { border-radius:6px; background:#eff6ff; font-weight:600; } .arrow { color:var(--muted); }
+    .callout { border-left:4px solid var(--accent); background:#eef7fb; padding:14px 18px; margin:1.2em 0; } .ok { border-color:var(--good); background:#f0fdf4; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; } .card { border:1px solid var(--line); border-radius:8px; padding:16px; } .chosen { border:2px solid var(--accent); }
+    table { width:100%; border-collapse:collapse; margin:1em 0; } th,td { border:1px solid var(--line); padding:9px; text-align:left; vertical-align:top; } th { background:#f1f5f9; }
+    @media(max-width:650px){ article{padding:24px 18px;} table{display:block;overflow:auto;} }
+  </style>
+</head>
+<body><main><article>
+  <p class="meta"><span class="tag">Draft v0.1</span><span class="tag">2026-09-12</span><span class="tag">Decision pending</span></p>
+  <h1>Enterprise Employee Agent</h1>
+  <p>Корпоративный помощник по знаниям и рабочим действиям. Первая демонстрационная вертикаль использует публичные HR-материалы GitLab Handbook: сотрудник получает основанный на источниках ответ и проходит контролируемый workflow leave of absence.</p>
+  <div class="callout"><strong>Честная граница.</strong> Handbook публичен и направляет реальную US-заявку в Tilt через Okta. Поэтому v1 не имитирует интеграцию с GitLab, Tilt или Okta. Он создаёт локальную учебную заявку и показывает, как права влияют на поиск, отображение и действие.</div>
+
+  <h2>Целевой сценарий</h2>
+  <div class="flow"><span class="step">Вопрос сотрудника</span><span class="arrow">→</span><span class="step">Разрешённые источники</span><span class="arrow">→</span><span class="step">Уточнение</span><span class="arrow">→</span><span class="step">Черновик</span><span class="arrow">→</span><span class="step">Подтверждение</span><span class="arrow">→</span><span class="step">Локальная заявка</span><span class="arrow">→</span><span class="step">Статус по роли</span></div>
+  <p>Сотрудник сообщает, что ему нужна медицинская пауза. Система уточняет юрисдикцию и даты, объясняет применимый маршрут без выдуманной eligibility, показывает черновик и создаёт заявку только после явного подтверждения. Руководитель видит даты и необходимость решения, HR — основание и данные, нужные для обработки.</p>
+
+  <h2>Подходы</h2>
+  <div class="grid">
+    <section class="card"><h3>A. RAG-справочник</h3><p>Отвечает по Handbook с цитатами.</p><p><strong>Плюс:</strong> быстро. <strong>Минус:</strong> не завершает рабочую задачу.</p></section>
+    <section class="card"><h3>B. Форма без LLM</h3><p>Фиксированные поля создают заявку и маршрут.</p><p><strong>Плюс:</strong> предсказуемо. <strong>Минус:</strong> сотрудник сам разбирается в политике.</p></section>
+    <section class="card chosen"><h3>C. Knowledge + typed workflow</h3><p>LLM извлекает кандидатные факты; код проверяет права, обязательные поля, подтверждение и переходы состояния.</p><p><strong>Плюс:</strong> естественный язык без передачи полномочий модели. <strong>Минус:</strong> требует fixtures и тестов.</p></section>
+    <section class="card"><h3>D. Свободный multi-agent</h3><p>Несколько агентов сами выбирают поиск и инструменты.</p><p><strong>Плюс:</strong> гибкость. <strong>Минус:</strong> не доказывает ценность на одном небольшом workflow.</p></section>
+  </div>
+  <div class="callout ok"><strong>Предложение:</strong> выбрать C. Он показывает знания, контроль доступа и действие в доступном учебном контуре.</div>
+
+  <h2>Роли и доступ</h2>
+  <table><thead><tr><th>Роль</th><th>Может видеть</th><th>Не должна видеть</th><th>Действие</th></tr></thead><tbody>
+    <tr><td>Сотрудник</td><td>Свою заявку, применимые открытые источники, статус</td><td>Чужие заявки, внутренние HR-заметки</td><td>Создать и отменить свою заявку</td></tr>
+    <tr><td>Руководитель</td><td>Даты, статус, решение по заявке подчинённого</td><td>Медицинскую причину и чувствительные данные</td><td>Одобрить или отклонить в учебном workflow</td></tr>
+    <tr><td>HR</td><td>Полный набор полей и историю</td><td>Данные других подразделений вне fixture scope</td><td>Принять в обработку, запросить уточнение</td></tr>
+  </tbody></table>
+  <p>Эта permission manifest — учебная. Она не является утверждением о настоящих правах в GitLab.</p>
+
+  <h2>Что является доказуемым</h2>
+  <ul>
+    <li>Ответы опираются на разрешённые фрагменты GitLab Handbook и не выдумывают eligibility.</li>
+    <li>Одна заявка отображается по-разному для сотрудника, руководителя и HR.</li>
+    <li>Изменение состояния требует явного подтверждения и не дублируется при повторе.</li>
+    <li>История заявок и решений проверяема в локальном учебном хранилище.</li>
+  </ul>
+  <p>Не является доказуемым: production IAM, доступ к закрытым GitLab-документам, реальная отправка в Tilt/Okta и юридическая оценка leave eligibility.</p>
+
+  <h2>Критерии приёмки v1</h2>
+  <ul>
+    <li>Сотрудник проходит сценарий «вопрос → уточнение → черновик → подтверждение → submitted».</li>
+    <li>Повтор подтверждения с тем же ключом идемпотентности не создаёт новую заявку.</li>
+    <li>Руководитель может принять решение, не получая медицинскую причину.</li>
+    <li>HR получает нужные детали и может запросить уточнение.</li>
+    <li>Попытки передать пользователю чужую заявку или запрещённый фрагмент не проходят.</li>
+    <li>Автоматический smoke-тест доказывает полный сценарий; unit-тесты проверяют permissions и state machine.</li>
+  </ul>
+
+  <h2>Следующее решение</h2>
+  <p>После выбора подхода C уточнить: ограничивается ли v1 американским leave, и обязателен ли manager approval в первом рабочем срезе.</p>
+</article></main></body></html>
