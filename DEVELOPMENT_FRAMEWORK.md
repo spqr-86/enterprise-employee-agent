@@ -246,6 +246,12 @@ QA verdict bound to the reviewed head revision, owner acceptance, and intended s
 Unchecked boxes are visible status, not evidence. CI and branch protection enforce the checks
 that GitHub can verify; the integrator verifies the recorded human gates before merge.
 
+Repository settings allow squash merge only and delete merged head branches. Protection for
+`main` requires a pull request, the successful `checks` status check, linear history, and blocks
+force-push and deletion, including for administrators. If the hosting plan cannot enforce these
+rules for a private repository, record that limitation in the active Issue and PR; the integrator
+must verify CI and every recorded gate manually until protection becomes available.
+
 Do not amend, rebase, stage, commit, or push unrelated changes in a dirty worktree. A remote is
 created as private unless the owner explicitly selects another visibility. Adding a remote and
 pushing it are external actions performed only with owner authorization.
