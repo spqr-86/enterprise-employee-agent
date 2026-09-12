@@ -66,9 +66,9 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   test, Ruff/pytest Make targets, and minimal read-only GitHub Actions CI.
 - Local locked install, checks, tests, smoke test, sdist, and wheel pass. GitHub Issue #1 is
   closed; PR #2 passed hosted CI and was merged on 2026-09-12.
-- Process hardening is in draft PR #4 / Issue #3 with green CI: preflight, Issue/PR templates,
-  lifecycle labels, and squash-only merge settings. `main` protection is blocked for a private
-  repository on GitHub Free; manual gate verification is documented in the PR branch.
+- Process hardening is in draft PR #4 / Issue #3: preflight, Issue/PR templates, lifecycle
+  labels, and squash-only merge settings. The owner selected a private repository with manual
+  verification of CI and human gates while GitHub Free cannot protect private `main`.
 - No product behavior, corpus data, or external integration exists.
 
 ## 7. Next steps
@@ -88,8 +88,6 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
 
 ## 8. Open decisions
 
-- Keep the repository private with manual merge gates, make it public, or upgrade to GitHub Pro
-  so GitHub can enforce protection and required CI on `main`.
 - Which LLM provider and model form the first retrieval/extraction baseline.
 - Which minimal user interface best demonstrates the full workflow without hiding evidence,
   identity, confirmation version, and status.

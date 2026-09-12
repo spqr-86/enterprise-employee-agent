@@ -25,3 +25,6 @@
 - GitHub CI passed for PR #4 head `653424c`. Repository settings now allow squash merge only and
   delete merged branches. Technical protection of private `main` is unavailable on the current
   GitHub Free plan; the framework records a manual gate fallback pending an owner choice.
+- The owner selected the private-repository option on 2026-09-12. Until the hosting plan changes,
+  the integrator must manually verify the current CI result, independent QA, owner acceptance,
+  squash merge, and the post-merge state of `main`.
