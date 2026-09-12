@@ -59,6 +59,29 @@ Create an Issue for active implementation work, then make the Issue authoritativ
 state and acceptance criteria; do not maintain two live backlogs afterward. Drive is only the
 source of the original framework. This file in the repository is the canonical adapted version.
 
+### Project preflight
+
+Before the first code or documentation change, or any GitHub write, complete a project
+preflight:
+
+1. Read `AGENTS.md` and every document it marks as required for the task.
+2. Identify the canonical process source, the current delivery stage, and the next gate.
+3. Reconcile the latest handoff with this framework, `PLAN.md`, and the active GitHub Issue.
+4. Resolve material conflicts in the canonical artifact before implementation continues.
+
+A handoff is evidence and navigation, not authority for the next action. An Issue is actionable
+only after it satisfies the Definition of Ready. Until preflight is complete, repository reading
+and other read-only inspection are allowed; code/document changes and GitHub writes are not.
+
+Before an external write or a transition to another lifecycle stage, state one short control
+line:
+
+> Stage: `<stage>`. Required documents: read. Next allowed action: `<action>`. Merge:
+> `<allowed or blocked, with reason>`.
+
+The line records the decision at a meaningful boundary. It is not required before each read-only
+inspection.
+
 ## 3. Architecture
 
 The product is a typed workflow with an LLM-assisted knowledge layer. The model proposes an
@@ -218,6 +241,11 @@ change and verification evidence; QA reviews its current head; the authorized in
 merges after required QA PASS and owner acceptance. Verify `main` after merge before closing the
 Issue.
 
+The pull request template records the linked Issue, verification evidence, CI result, independent
+QA verdict bound to the reviewed head revision, owner acceptance, and intended squash merge.
+Unchecked boxes are visible status, not evidence. CI and branch protection enforce the checks
+that GitHub can verify; the integrator verifies the recorded human gates before merge.
+
 Do not amend, rebase, stage, commit, or push unrelated changes in a dirty worktree. A remote is
 created as private unless the owner explicitly selects another visibility. Adding a remote and
 pushing it are external actions performed only with owner authorization.
@@ -289,6 +317,10 @@ One observable result and its priority.
 - Unresolved decisions: none
 - Scope authority:
 ```
+
+The repository's Issue form implements this structure for groomed work and applies `ready` only
+after every required field and Definition of Ready check is completed. Earlier initiatives stay
+in `BACKLOG.md` with `draft` status until grooming is complete.
 
 ## 8. Roles and handoff
 
