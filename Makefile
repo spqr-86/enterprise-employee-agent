@@ -1,4 +1,4 @@
-.PHONY: sync check test eval-smoke
+.PHONY: sync check test check-corpus eval-smoke
 
 sync:
 	uv sync --locked
@@ -9,6 +9,9 @@ check:
 
 test:
 	uv run --locked pytest
+
+check-corpus:
+	uv run --locked python -m enterprise_employee_agent.knowledge.corpus
 
 eval-smoke:
 	uv run --locked pytest -m smoke
