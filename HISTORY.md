@@ -20,3 +20,8 @@
   then implement one Ready Issue at a time.
 - PR #2 used a merge commit instead of the framework's required squash merge. The integrated
   history remains as-is; future task PRs must use squash merge.
+- Opened Issue #3 and draft PR #4 to harden delivery gates. The branch adds mandatory project
+  preflight, handoff reconciliation, a Ready Issue form, a PR gate checklist, and lifecycle labels.
+- GitHub CI passed for PR #4 head `653424c`. Repository settings now allow squash merge only and
+  delete merged branches. Technical protection of private `main` is unavailable on the current
+  GitHub Free plan; the framework records a manual gate fallback pending an owner choice.
