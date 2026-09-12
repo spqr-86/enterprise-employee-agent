@@ -196,7 +196,33 @@ CI starts with the first executable pull request. It performs locked installatio
 and integration tests, and the available offline smoke evaluation. Live model evaluation remains
 separate because it needs secrets and a cost budget.
 
-## 6. Task lifecycle
+## 6. Git workflow
+
+`main` is the always-verifiable integrated version. The project has no permanent `dev` branch.
+After a GitHub remote exists, each task starts from current `main` in one branch:
+
+```text
+feat/<issue>-<slug>     # user-visible functionality
+fix/<issue>-<slug>      # defect correction
+docs/<issue>-<slug>     # documentation and specifications
+chore/<issue>-<slug>    # bootstrap, dependencies, CI, maintenance
+```
+
+One logical change is one Conventional Commit in English: `feat:`, `fix:`, `docs:`, `test:`, or
+`chore:`. The branch carries the Issue identifier after Issues exist. Before the first remote,
+foundation documents and bootstrap may be committed directly to local `main`.
+
+After the remote exists, product behavior, retrieval, access rules, workflow state, persistence,
+and CI reach `main` through a pull request. The Engineer creates the branch and PR with the
+change and verification evidence; QA reviews its current head; the authorized integrator squash
+merges after required QA PASS and owner acceptance. Verify `main` after merge before closing the
+Issue.
+
+Do not amend, rebase, stage, commit, or push unrelated changes in a dirty worktree. A remote is
+created as private unless the owner explicitly selects another visibility. Adding a remote and
+pushing it are external actions performed only with owner authorization.
+
+## 7. Task lifecycle
 
 ### Full path
 
@@ -264,7 +290,7 @@ One observable result and its priority.
 - Scope authority:
 ```
 
-## 7. Roles and handoff
+## 8. Roles and handoff
 
 | Role | Output | Boundary |
 |---|---|---|
@@ -284,7 +310,7 @@ acceptance-criteria revision, corpus manifest, prompt version, and eval config. 
 invalidate stale QA or eval evidence; unaffected evidence may be reused only when applicability
 is recorded.
 
-## 8. Tests and evaluation
+## 9. Tests and evaluation
 
 Eval-first means recording expected behavior before changing model-dependent behavior. It does
 not require finishing the release benchmark before the first small implementation.
@@ -320,7 +346,7 @@ Every live result records code revision, corpus/dataset/prompt versions, prompt 
 and known provider revision, parameters, run ID, usage, cost, latency, raw outcomes, and failures.
 An experiment ends with `KEEP`, `REVERT`, or `INVESTIGATE` and a concrete next action.
 
-## 9. Data, model, and security rules
+## 10. Data, model, and security rules
 
 The first corpus contains only the GitLab Handbook US leave documents needed by the scenario.
 `data/manifest.json` records source URL and revision, retrieval time, licence, path, hash, stable
@@ -344,7 +370,7 @@ reports. Logs exclude free-text sensitive fields and hidden model reasoning. Exa
 employee, manager, and HR projections form a versioned contract and are tested at the
 serialization boundary. Authorization also applies to idempotent result replay and audit history.
 
-## 10. Definition of Done
+## 11. Definition of Done
 
 A task is Done when its current acceptance criteria pass; applicable tests and evals pass;
 required checks are present; independent QA and owner acceptance are recorded where applicable;
@@ -355,7 +381,7 @@ The v0.1 release additionally requires the checklist in `PLAN.md`: clean-clone l
 Compose with persistent SQLite state, offline CI, full role-aware demo, live baseline and held-out
 report, corpus provenance, and documented limitations.
 
-## 11. Orchestration
+## 12. Orchestration
 
 Start with a supervised sequential workflow. The owner or existing coding harness selects a
 Ready task and starts PM/Groomer, Engineer, and QA in separate contexts as needed. A custom
@@ -372,7 +398,7 @@ default, two repair cycles after the first QA failure are allowed; then the task
 Parallel execution requires independent Issues, isolated write areas, branches/worktrees, stable
 interfaces, an integration owner, and verification of the combined result.
 
-## 12. Initial delivery route
+## 13. Initial delivery route
 
 | Order | Initiative | Exit criterion |
 |---|---|---|
@@ -397,7 +423,7 @@ request survives restart → manager sees only allowed fields → HR starts proc
 Implement it first with a deterministic fake LLM adapter. Add retrieval and live model behavior
 through their own measured tasks.
 
-## 13. Changing this framework
+## 14. Changing this framework
 
 After the first complete task cycle and each milestone, review unclear criteria, unnecessary
 handoffs, repeated work, stale evidence, missed failures, cost, and recovery. Change this file in

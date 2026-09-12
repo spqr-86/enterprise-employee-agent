@@ -32,6 +32,8 @@ contract.
   expected-version, and idempotency rules defined in the framework. Draft edits do not submit a
   request.
 - Use conventional English commit messages, one logical change per commit.
+- After a GitHub remote exists, create one task branch from `main` and integrate through a PR;
+  there is no permanent `dev` branch. Details are in `DEVELOPMENT_FRAMEWORK.md`.
 
 ## Boundaries
 
