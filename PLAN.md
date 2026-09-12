@@ -66,31 +66,34 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   test, Ruff/pytest Make targets, and minimal read-only GitHub Actions CI.
 - Local locked install, checks, tests, smoke test, sdist, and wheel pass. GitHub Issue #1 is
   closed; PR #2 passed hosted CI and was merged on 2026-09-12.
-- Process hardening is in draft PR #4 / Issue #3: preflight, Issue/PR templates, lifecycle
-  labels, and squash-only merge settings. The owner selected a private repository with manual
-  verification of CI and human gates while GitHub Free cannot protect private `main`.
+- Process hardening from PR #4 is integrated and Issue #3 is complete: preflight, Issue/PR
+  templates, lifecycle labels, squash-only merge, and a private-repository manual gate fallback.
+- Full v0.1 grooming created milestone `v0.1` and dependency-linked Issues #5–#16. Issues #5 and
+  #6 are Ready; later Issues remain Draft until their declared dependencies exist. Issue #5 is
+  the next implementation task.
 - No product behavior, corpus data, or external integration exists.
 
 ## 7. Next steps
 
-1. Groom all planned v0.1 initiatives, then create the v0.1 milestone and dependency-linked
-   GitHub Issues before starting the next implementation task.
-2. Import only the minimal US leave subset and record source revision, URL, retrieval date,
-   licence, hashes, and stable fragment IDs.
-3. Define demo identities, field-level projections, commands, state machine, error behavior, and
-   10-15 reviewed micro-eval cases.
-4. Build the simplest retrieval/answer baseline and publish its first error table.
-5. Test and implement authorization, version-bound confirmation, idempotency, workflow
+1. Implement Issue #5: import only the minimal US leave subset and record source revision, URL,
+   retrieval date, licence, hashes, and stable fragment IDs.
+2. Implement Issue #6: define demo identities, field-level projections, commands, state machine,
+   error behavior, confirmation, idempotency, and audit contracts.
+3. Create 10–15 reviewed micro-eval cases in Issue #7 and build the simplest retrieval/answer
+   baseline in Issue #8; select the live model and budget at that gate, then publish the first
+   error table.
+4. Test and implement authorization, version-bound confirmation, idempotency, workflow
    transitions, persistence, and the fake-adapter vertical slice.
-6. Integrate the knowledge and workflow paths, then complete the interface, Docker Compose, CI,
-   README, and clean-clone verification.
-7. Expand the dataset and run the held-out live evaluation; publish the v0.1 results and limits.
+5. Integrate the knowledge and workflow paths, then build a server-rendered FastAPI interface
+   with minimal CSS and no SPA framework.
+6. Complete Docker Compose, offline CI, README, and clean-clone verification.
+7. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
+   limits, and release decision.
 
 ## 8. Open decisions
 
-- Which LLM provider and model form the first retrieval/extraction baseline.
-- Which minimal user interface best demonstrates the full workflow without hiding evidence,
-  identity, confirmation version, and status.
+- Issue #8 will select the current live provider/model and maximum evaluation spend immediately
+  before its baseline run; availability and pricing are intentionally not frozen during grooming.
 
 ## 9. Target structure
 
