@@ -5,7 +5,7 @@ initiative becomes an Issue, the Issue is authoritative for task status and acce
 
 | Priority | Initiative | Why now | Depends on | Issue/milestone |
 |---|---|---|---|---|
-| P0 | Reconcile and bootstrap | Makes the documented workflow executable | Current spec/framework | not yet filed |
+| P0 | Reconcile and bootstrap | Makes the documented workflow executable | Current spec/framework | #1 — `chore/1-bootstrap` pushed; PR pending |
 | P0 | Corpus manifest | Gives retrieval a frozen, attributable input | Bootstrap | not yet filed |
 | P0 | Workflow contract | Fixes identities, projections, commands and errors before code | Bootstrap | not yet filed |
 | P0 | Micro-eval contract | Defines expected model behavior before tuning | Corpus manifest | not yet filed |

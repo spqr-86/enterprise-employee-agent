@@ -10,3 +10,7 @@
 - Added the adapted development framework, local backlog, and aligned the plan, specification,
   README, and agent context. The first work item is package/CI bootstrap.
 - Created the private GitHub repository `spqr-86/enterprise-employee-agent` and pushed `main`.
+- Bootstrapped an installable Python 3.12 package with a locked `uv` environment, Ruff, pytest,
+  Make targets, an offline import smoke test, and minimal read-only GitHub Actions CI.
+- Verified locked install, lint, format, tests, smoke test, sdist, and wheel locally. Created
+  GitHub Issue #1 and pushed `chore/1-bootstrap`; the pull request and hosted CI remain next.
