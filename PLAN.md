@@ -66,6 +66,9 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   test, Ruff/pytest Make targets, and minimal read-only GitHub Actions CI.
 - Local locked install, checks, tests, smoke test, sdist, and wheel pass. GitHub Issue #1 is
   closed; PR #2 passed hosted CI and was merged on 2026-09-12.
+- Process hardening is in draft PR #4 / Issue #3: preflight, Issue/PR templates, lifecycle
+  labels, and squash-only merge settings. The owner selected a private repository with manual
+  verification of CI and human gates while GitHub Free cannot protect private `main`.
 - No product behavior, corpus data, or external integration exists.
 
 ## 7. Next steps

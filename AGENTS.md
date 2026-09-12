@@ -2,10 +2,14 @@
 
 ## Current phase
 
-The project foundation and v0.2 specification exist. Approach C (knowledge + typed workflow)
-is selected. Follow `DEVELOPMENT_FRAMEWORK.md`; do not broaden the workflow beyond US leave in
-v0.1. The next delivery step is reconciliation/bootstrap, then the corpus manifest and workflow
-contract.
+The project foundation, v0.2 specification, package bootstrap, and CI exist. Approach C
+(knowledge + typed workflow) is selected. Follow `DEVELOPMENT_FRAMEWORK.md`; do not broaden the
+workflow beyond US leave in v0.1. Derive the current stage and next gate from `PLAN.md` and the
+active GitHub Issue instead of recording a duplicate status here.
+
+Before the first code/document change or GitHub write, complete the project preflight in
+`DEVELOPMENT_FRAMEWORK.md`: read the required sources, reconcile the handoff, name the current
+stage and next gate, and state the control line. No implementation starts from a handoff alone.
 
 ## Planned stack
 

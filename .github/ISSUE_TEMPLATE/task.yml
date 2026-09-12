@@ -1,0 +1,73 @@
+name: Ready task
+description: Define one groomed, verifiable project result
+title: ""
+labels:
+  - ready
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Submit this form only after grooming. Every required field and Definition of Ready check must be complete.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal and why now
+      description: State one observable result and why it has priority.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References and dependencies
+      description: Link the spec section/version, initiative or milestone, and prerequisite Issues or data.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: List what is in scope, what is out of scope, and material constraints or risks.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use checkboxes for observable behavior and material edge cases.
+      placeholder: |-
+        - [ ] AC-1
+        - [ ] AC-2 / material edge case
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: Define unit/integration checks, eval slice, security/regression checks, and manual or domain review as applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Implementation plan
+      description: Give the smallest ordered plan that can satisfy the criteria.
+    validations:
+      required: true
+  - type: textarea
+    id: decisions
+    attributes:
+      label: Ready check and open decisions
+      description: Record unresolved decisions, available dependencies/data, eval budget, and scope authority. Write "none" where appropriate.
+    validations:
+      required: true
+  - type: checkboxes
+    id: ready
+    attributes:
+      label: Definition of Ready
+      options:
+        - label: The Issue has one observable result and testable acceptance criteria.
+          required: true
+        - label: Scope, non-goals, dependencies, data, verification, and any live-eval budget are explicit.
+          required: true
+        - label: No unresolved product decision blocks implementation.
+          required: true
