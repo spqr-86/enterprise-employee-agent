@@ -64,13 +64,13 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
 - Product spec v0.2 written; approach C, US-only v0.1, and a read-only manager view are selected.
 - Local bootstrap exists on `chore/1-bootstrap`: Python 3.12 package metadata, `uv.lock`, an
   import smoke test, Ruff/pytest Make targets, and minimal read-only GitHub Actions CI.
-- Local locked install, checks, tests, smoke test, sdist, and wheel pass. GitHub Issue #1 exists;
-  the pull request and hosted CI verification are pending.
+- Local locked install, checks, tests, smoke test, sdist, and wheel pass. GitHub Issue #1 and
+  remote branch `chore/1-bootstrap` exist; the pull request and hosted CI verification are pending.
 - No product behavior, corpus data, or external integration exists.
 
 ## 7. Next steps
 
-1. Push `chore/1-bootstrap`, open the bootstrap pull request for Issue #1, and verify its CI.
+1. Open the bootstrap pull request for Issue #1 and verify its CI.
 2. Import only the minimal US leave subset and record source revision, URL, retrieval date,
    licence, hashes, and stable fragment IDs.
 3. Define demo identities, field-level projections, commands, state machine, error behavior, and
