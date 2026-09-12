@@ -28,3 +28,6 @@
 - The owner selected the private-repository option on 2026-09-12. Until the hosting plan changes,
   the integrator must manually verify the current CI result, independent QA, owner acceptance,
   squash merge, and the post-merge state of `main`.
+- PR #4 passed independent QA and CI, was accepted, and was squash-merged as `1b623d0`; Issue #3
+  closed. Full v0.1 grooming then created milestone `v0.1` and Issues #5–#16 with explicit
+  dependencies. Only #5 and #6 are Ready; #5 is the next implementation task.
