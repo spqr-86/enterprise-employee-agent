@@ -54,10 +54,10 @@ If documents disagree, do not silently choose an interpretation. Product scope f
 latest explicit owner decision recorded in the spec. Update dependent documents before writing
 code that relies on it.
 
-Until a GitHub remote exists, `BACKLOG.md` may contain task-sized entries using the Issue
-template below. Move live task state into Issues after the remote is configured; do not maintain
-two active backlogs afterward. Drive is only the source of the original framework. This file in
-the repository is the canonical adapted version.
+`BACKLOG.md` holds the prioritized initiative index until the corresponding GitHub Issues exist.
+Create an Issue for active implementation work, then make the Issue authoritative for its task
+state and acceptance criteria; do not maintain two live backlogs afterward. Drive is only the
+source of the original framework. This file in the repository is the canonical adapted version.
 
 ## 3. Architecture
 

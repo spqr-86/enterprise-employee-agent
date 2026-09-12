@@ -58,6 +58,8 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
 ## 6. Current status
 
 - Project foundation created on 2026-09-12.
+- Private GitHub remote configured: `spqr-86/enterprise-employee-agent`; local `main` tracks
+  `origin/main`.
 - Existing GitLab corpus located and assessed; no data copied yet.
 - Product spec v0.2 written; approach C, US-only v0.1, and a read-only manager view are selected.
 - No application code or external integration exists.

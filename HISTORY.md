@@ -9,3 +9,4 @@
   processing/clarification actions.
 - Added the adapted development framework, local backlog, and aligned the plan, specification,
   README, and agent context. The first work item is package/CI bootstrap.
+- Created the private GitHub repository `spqr-86/enterprise-employee-agent` and pushed `main`.
