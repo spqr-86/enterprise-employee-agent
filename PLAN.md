@@ -62,15 +62,16 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   `origin/main`.
 - Existing GitLab corpus located and assessed; no data copied yet.
 - Product spec v0.2 written; approach C, US-only v0.1, and a read-only manager view are selected.
-- Local bootstrap exists on `chore/1-bootstrap`: Python 3.12 package metadata, `uv.lock`, an
-  import smoke test, Ruff/pytest Make targets, and minimal read-only GitHub Actions CI.
-- Local locked install, checks, tests, smoke test, sdist, and wheel pass. GitHub Issue #1 and
-  remote branch `chore/1-bootstrap` exist; the pull request and hosted CI verification are pending.
+- Bootstrap is integrated into `main`: Python 3.12 package metadata, `uv.lock`, an import smoke
+  test, Ruff/pytest Make targets, and minimal read-only GitHub Actions CI.
+- Local locked install, checks, tests, smoke test, sdist, and wheel pass. GitHub Issue #1 is
+  closed; PR #2 passed hosted CI and was merged on 2026-09-12.
 - No product behavior, corpus data, or external integration exists.
 
 ## 7. Next steps
 
-1. Open the bootstrap pull request for Issue #1 and verify its CI.
+1. Groom all planned v0.1 initiatives, then create the v0.1 milestone and dependency-linked
+   GitHub Issues before starting the next implementation task.
 2. Import only the minimal US leave subset and record source revision, URL, retrieval date,
    licence, hashes, and stable fragment IDs.
 3. Define demo identities, field-level projections, commands, state machine, error behavior, and

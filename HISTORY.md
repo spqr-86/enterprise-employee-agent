@@ -14,3 +14,9 @@
   Make targets, an offline import smoke test, and minimal read-only GitHub Actions CI.
 - Verified locked install, lint, format, tests, smoke test, sdist, and wheel locally. Created
   GitHub Issue #1 and pushed `chore/1-bootstrap`; the pull request and hosted CI remain next.
+- PR #2 passed hosted CI and was merged into `main`; Issue #1 closed automatically. The local
+  `main` was fast-forwarded to the verified remote result.
+- Decided to groom the complete v0.1 backlog before creating the remaining milestone and Issues,
+  then implement one Ready Issue at a time.
+- PR #2 used a merge commit instead of the framework's required squash merge. The integrated
+  history remains as-is; future task PRs must use squash merge.
