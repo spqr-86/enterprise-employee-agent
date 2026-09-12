@@ -3,65 +3,135 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Enterprise Employee Agent — draft spec</title>
+  <title>Enterprise Employee Agent — product and delivery spec</title>
   <style>
-    :root { --ink:#1e293b; --muted:#52606d; --line:#d7dee8; --bg:#f5f7fb; --paper:#fff; --accent:#075985; --good:#14532d; }
+    :root { --ink:#172033; --muted:#52606d; --line:#d7dee8; --bg:#f5f7fb; --paper:#fff; --accent:#075985; --good:#14532d; --warn:#854d0e; }
+    * { box-sizing:border-box; }
     body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 system-ui,sans-serif; }
-    main { max-width:1000px; margin:32px auto; padding:0 20px 64px; } article { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:clamp(24px,5vw,58px); }
-    h1,h2,h3 { line-height:1.2; } h2 { margin-top:2.2em; border-top:1px solid var(--line); padding-top:1em; } p,li { max-width:82ch; }
-    .meta,.flow { display:flex; flex-wrap:wrap; gap:8px; align-items:center; } .tag,.step { border:1px solid var(--line); border-radius:99px; padding:5px 10px; font-size:.9rem; } .step { border-radius:6px; background:#eff6ff; font-weight:600; } .arrow { color:var(--muted); }
-    .callout { border-left:4px solid var(--accent); background:#eef7fb; padding:14px 18px; margin:1.2em 0; } .ok { border-color:var(--good); background:#f0fdf4; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; } .card { border:1px solid var(--line); border-radius:8px; padding:16px; } .chosen { border:2px solid var(--accent); }
-    table { width:100%; border-collapse:collapse; margin:1em 0; } th,td { border:1px solid var(--line); padding:9px; text-align:left; vertical-align:top; } th { background:#f1f5f9; }
+    main { max-width:1050px; margin:32px auto; padding:0 20px 64px; }
+    article { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:clamp(24px,5vw,58px); }
+    h1,h2,h3 { line-height:1.2; }
+    h2 { margin-top:2.2em; border-top:1px solid var(--line); padding-top:1em; }
+    p,li { max-width:86ch; }
+    code { background:#f1f5f9; border-radius:4px; padding:.1em .35em; }
+    .meta,.flow { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .tag,.step { border:1px solid var(--line); border-radius:99px; padding:5px 10px; font-size:.9rem; }
+    .step { border-radius:6px; background:#eff6ff; font-weight:600; }
+    .arrow { color:var(--muted); }
+    .callout { border-left:4px solid var(--accent); background:#eef7fb; padding:14px 18px; margin:1.2em 0; }
+    .ok { border-color:var(--good); background:#f0fdf4; }
+    .warn { border-color:var(--warn); background:#fffbeb; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+    .card { border:1px solid var(--line); border-radius:8px; padding:16px; }
+    .chosen { border:2px solid var(--accent); }
+    table { width:100%; border-collapse:collapse; margin:1em 0; }
+    th,td { border:1px solid var(--line); padding:9px; text-align:left; vertical-align:top; }
+    th { background:#f1f5f9; }
     @media(max-width:650px){ article{padding:24px 18px;} table{display:block;overflow:auto;} }
   </style>
 </head>
 <body><main><article>
-  <p class="meta"><span class="tag">Draft v0.1</span><span class="tag">2026-09-12</span><span class="tag">Decision pending</span></p>
+  <p class="meta"><span class="tag">v0.2</span><span class="tag">2026-09-12</span><span class="tag">Approach C selected</span><span class="tag">Eval-first</span></p>
   <h1>Enterprise Employee Agent</h1>
-  <p>Корпоративный помощник по знаниям и рабочим действиям. Первая демонстрационная вертикаль использует публичные HR-материалы GitLab Handbook: сотрудник получает основанный на источниках ответ и проходит контролируемый workflow leave of absence.</p>
-  <div class="callout"><strong>Честная граница.</strong> Handbook публичен и направляет реальную US-заявку в Tilt через Okta. Поэтому v1 не имитирует интеграцию с GitLab, Tilt или Okta. Он создаёт локальную учебную заявку и показывает, как права влияют на поиск, отображение и действие.</div>
+  <p>Законченный минимальный портфолио-проект корпоративного помощника по знаниям и рабочим действиям. Первая вертикаль использует публичные материалы GitLab Handbook: сотрудник получает ответ с доказательствами и проходит контролируемый учебный workflow leave of absence.</p>
+  <p>Название описывает пользователя, а не один HR-домен. После завершения v0.1 архитектуру можно проверить вторым сценарием из IT support, procurement или другого внутреннего процесса. Расширение начинается только после воспроизводимого релиза первой вертикали.</p>
 
-  <h2>Целевой сценарий</h2>
-  <div class="flow"><span class="step">Вопрос сотрудника</span><span class="arrow">→</span><span class="step">Разрешённые источники</span><span class="arrow">→</span><span class="step">Уточнение</span><span class="arrow">→</span><span class="step">Черновик</span><span class="arrow">→</span><span class="step">Подтверждение</span><span class="arrow">→</span><span class="step">Локальная заявка</span><span class="arrow">→</span><span class="step">Статус по роли</span></div>
-  <p>Сотрудник сообщает, что ему нужна медицинская пауза. Система уточняет юрисдикцию и даты, объясняет применимый маршрут без выдуманной eligibility, показывает черновик и создаёт заявку только после явного подтверждения. Руководитель видит даты и необходимость решения, HR — основание и данные, нужные для обработки.</p>
+  <div class="callout"><strong>Честная граница.</strong> Handbook направляет настоящие US leave requests в Tilt через Okta. v0.1 не имитирует эту интеграцию и не определяет юридическую eligibility. Он создаёт локальную учебную заявку и демонстрирует поиск с источниками, минимальное раскрытие данных, подтверждаемое действие и аудит.</div>
 
-  <h2>Подходы</h2>
+  <h2>Решение и альтернативы</h2>
   <div class="grid">
     <section class="card"><h3>A. RAG-справочник</h3><p>Отвечает по Handbook с цитатами.</p><p><strong>Плюс:</strong> быстро. <strong>Минус:</strong> не завершает рабочую задачу.</p></section>
-    <section class="card"><h3>B. Форма без LLM</h3><p>Фиксированные поля создают заявку и маршрут.</p><p><strong>Плюс:</strong> предсказуемо. <strong>Минус:</strong> сотрудник сам разбирается в политике.</p></section>
-    <section class="card chosen"><h3>C. Knowledge + typed workflow</h3><p>LLM извлекает кандидатные факты; код проверяет права, обязательные поля, подтверждение и переходы состояния.</p><p><strong>Плюс:</strong> естественный язык без передачи полномочий модели. <strong>Минус:</strong> требует fixtures и тестов.</p></section>
-    <section class="card"><h3>D. Свободный multi-agent</h3><p>Несколько агентов сами выбирают поиск и инструменты.</p><p><strong>Плюс:</strong> гибкость. <strong>Минус:</strong> не доказывает ценность на одном небольшом workflow.</p></section>
+    <section class="card"><h3>B. Детерминированная форма</h3><p>Фиксированные поля создают локальную заявку.</p><p><strong>Плюс:</strong> предсказуемо. <strong>Минус:</strong> пользователь сам разбирается в политике.</p></section>
+    <section class="card chosen"><h3>C. Knowledge + typed workflow</h3><p>LLM ищет доказательства и предлагает структурированный черновик; код проверяет полномочия, поля, подтверждение и переходы.</p><p><strong>Плюс:</strong> показывает полный agent workflow с контролируемыми границами. <strong>Минус:</strong> требует fixtures, evals и тестов.</p></section>
+    <section class="card"><h3>D. Свободный multi-agent</h3><p>Агенты сами выбирают поиск и инструменты.</p><p><strong>Плюс:</strong> гибкость. <strong>Минус:</strong> добавляет сложность раньше доказанной необходимости.</p></section>
   </div>
-  <div class="callout ok"><strong>Предложение:</strong> выбрать C. Он показывает знания, контроль доступа и действие в доступном учебном контуре.</div>
+  <div class="callout ok"><strong>Выбран подход C.</strong> v0.1 — US leave, один законченный сценарий, локальное состояние и provider-neutral LLM adapter.</div>
 
-  <h2>Роли и доступ</h2>
-  <table><thead><tr><th>Роль</th><th>Может видеть</th><th>Не должна видеть</th><th>Действие</th></tr></thead><tbody>
-    <tr><td>Сотрудник</td><td>Свою заявку, применимые открытые источники, статус</td><td>Чужие заявки, внутренние HR-заметки</td><td>Создать и отменить свою заявку</td></tr>
-    <tr><td>Руководитель</td><td>Даты, статус, решение по заявке подчинённого</td><td>Медицинскую причину и чувствительные данные</td><td>Одобрить или отклонить в учебном workflow</td></tr>
-    <tr><td>HR</td><td>Полный набор полей и историю</td><td>Данные других подразделений вне fixture scope</td><td>Принять в обработку, запросить уточнение</td></tr>
+  <h2>Пользовательский сценарий v0.1</h2>
+  <div class="flow"><span class="step">Вопрос</span><span class="arrow">→</span><span class="step">Ответ с источниками</span><span class="arrow">→</span><span class="step">Уточнение</span><span class="arrow">→</span><span class="step">Черновик vN</span><span class="arrow">→</span><span class="step">Подтверждение vN</span><span class="arrow">→</span><span class="step">Submitted</span><span class="arrow">→</span><span class="step">HR processing</span></div>
+  <p>Сотрудник из US спрашивает, как оформить отсутствие, сообщает только необходимые операционные сведения и получает ответ с точными ссылками на разрешённые фрагменты. Система не выбирает вид leave и не обещает eligibility, если источник этого не устанавливает. Перед записью она показывает версионированный черновик. Подтверждение действует только для показанной версии.</p>
+  <p>HR принимает заявку в обработку или запрашивает уточнение. Менеджер видит только даты, операционный статус и отсутствие сотрудника. В v0.1 менеджер не одобряет и не отклоняет медицинский leave: такого шага выбранный источник не устанавливает.</p>
+
+  <h2>Границы v0.1</h2>
+  <table><thead><tr><th>Входит</th><th>Не входит</th></tr></thead><tbody>
+    <tr><td>US leave guidance и локальная учебная заявка</td><td>Другие юрисдикции и универсальная HR-платформа</td></tr>
+    <tr><td>Ответы с фрагментами и provenance</td><td>Юридическое решение об eligibility, расчёт выплат и гарантия job protection</td></tr>
+    <tr><td>Employee, manager и HR demo identities</td><td>Production IAM, SSO, реальные GitLab permissions</td></tr>
+    <tr><td>Локальный SQLite workflow</td><td>Tilt, Okta, HRIS и другие внешние записи</td></tr>
+    <tr><td>Необходимые даты, тип запроса и свободный комментарий без диагноза</td><td>Медицинские документы, диагнозы и избыточные чувствительные сведения</td></tr>
   </tbody></table>
-  <p>Эта permission manifest — учебная. Она не является утверждением о настоящих правах в GitLab.</p>
 
-  <h2>Что является доказуемым</h2>
+  <h2>Доверенная модель и доступ</h2>
+  <p>Роль и личность приходят из выбранной сервером demo identity, а не из текста пользователя или вывода модели. Каждая заявка имеет владельца; fixture задаёт связь manager–employee. Проверка выполняется до retrieval, перед выполнением команды и перед формированием ответа.</p>
+  <table><thead><tr><th>Роль</th><th>Видит</th><th>Действия v0.1</th></tr></thead><tbody>
+    <tr><td>Employee</td><td>Собственные заявки, открытые источники, статус и историю своих действий</td><td>Подготовить, подтвердить и отменить собственный черновик; ответить на запрос уточнения</td></tr>
+    <tr><td>Manager</td><td>Даты отсутствия и операционный статус прямого подчинённого</td><td>Только просмотр</td></tr>
+    <tr><td>HR</td><td>Поля заявки, необходимые для обработки, и историю переходов</td><td>Принять в обработку или запросить уточнение</td></tr>
+  </tbody></table>
+  <p>Поскольку GitLab corpus публичен, запрет retrieval проверяется на явно маркированных синтетических закрытых fixtures. Эти тесты доказывают работу учебного permission manifest, а не настоящую модель доступа GitLab.</p>
+
+  <h2>Состояния и команды</h2>
+  <p>Минимальная state machine: <code>draft → submitted → processing</code> и <code>submitted → needs_clarification → submitted</code>. Черновик можно отменить до отправки. Другие переходы добавляются отдельным решением после v0.1.</p>
   <ul>
-    <li>Ответы опираются на разрешённые фрагменты GitLab Handbook и не выдумывают eligibility.</li>
-    <li>Одна заявка отображается по-разному для сотрудника, руководителя и HR.</li>
-    <li>Изменение состояния требует явного подтверждения и не дублируется при повторе.</li>
-    <li>История заявок и решений проверяема в локальном учебном хранилище.</li>
+    <li>Каждая команда содержит actor, target, ожидаемую текущую версию и idempotency key.</li>
+    <li>Preview возвращает нормализованный черновик и его digest/version.</li>
+    <li>Подтверждение с устаревшей версией отклоняется; изменение полей требует нового preview.</li>
+    <li>Повтор команды с тем же idempotency key возвращает исходный результат и не создаёт второе событие.</li>
+    <li>История событий неизменяема средствами пользовательского workflow и содержит достаточно данных для аудита без сохранения скрытого chain-of-thought.</li>
   </ul>
-  <p>Не является доказуемым: production IAM, доступ к закрытым GitLab-документам, реальная отправка в Tilt/Okta и юридическая оценка leave eligibility.</p>
 
-  <h2>Критерии приёмки v1</h2>
+  <h2>Архитектурные границы</h2>
+  <table><thead><tr><th>Общее с первого дня</th><th>Остаётся leave-specific</th></tr></thead><tbody>
+    <tr><td>LLM adapter и фиксация версии модели/промпта</td><td>Схема полей leave request</td></tr>
+    <tr><td>Evidence/citation contract и provenance</td><td>Уточняющие вопросы и терминология leave</td></tr>
+    <tr><td>Authorization policy interface</td><td>Переходы leave state machine</td></tr>
+    <tr><td>Preview/confirmation envelope, idempotency и audit events</td><td>Role projections выбранного workflow</td></tr>
+    <tr><td>Eval runner и единый формат результатов</td><td>Набор ожидаемых ответов по US leave</td></tr>
+  </tbody></table>
+  <p>v0.1 не требует универсального workflow engine или multi-agent orchestration. Второй домен станет проверкой того, какие абстракции действительно повторяются.</p>
+
+  <h2>Eval-first контракт</h2>
+  <p>До изменения model-dependent поведения создаётся первая версия из 10–15 вручную проверенных кейсов, чтобы рано запустить retrieval baseline. К релизу v0.1 набор расширяется примерно до 30–40 кейсов и включает held-out часть, не используемую при настройке. Кейсы покрывают обычные вопросы, недостаточные данные, неподдерживаемые выводы, попытки получить чужие данные, prompt injection, устаревшее подтверждение и повторную отправку.</p>
+  <table><thead><tr><th>Измерение</th><th>Метрика</th><th>Предварительная приёмка</th></tr></thead><tbody>
+    <tr><td>Retrieval</td><td>Recall@k размеченного поддерживающего фрагмента</td><td>Не ниже 90% на основном наборе</td></tr>
+    <tr><td>Groundedness</td><td>Доля существенных утверждений, подтверждённых указанным фрагментом</td><td>Не ниже 90%; ручная рубрика для v0.1</td></tr>
+    <tr><td>Abstention</td><td>Корректное уточнение или эскалация при недостатке данных</td><td>Не ниже 90% в своей категории</td></tr>
+    <tr><td>Task success</td><td>Доля сценариев с ожидаемым финальным состоянием и полями</td><td>Не ниже 90% в своей категории</td></tr>
+    <tr><td>Safety invariants</td><td>Запись без подтверждения, неверный доступ, stale confirmation, дубли</td><td>100% детерминированных тестов проходят</td></tr>
+    <tr><td>Operations</td><td>Latency, input/output tokens, стоимость и ошибки на сценарий</td><td>Публикуется baseline без скрытого порога</td></tr>
+  </tbody></table>
+  <div class="callout warn"><strong>Интерпретация.</strong> «0 нарушений» означает результат данного набора тестов, а не доказательство абсолютной безопасности. На маленьком наборе отчёт публикует и проценты, и абсолютные значения. Изменение порога после baseline фиксируется с причиной.</div>
+  <p>Unit и smoke tests используют детерминированный fake adapter. Отдельный live-eval вызывает настоящую модель и фиксирует model id, параметры, prompt version, corpus manifest и сырые результаты, необходимые для повторной оценки.</p>
+
+  <h2>Портфолио-релиз v0.1</h2>
   <ul>
-    <li>Сотрудник проходит сценарий «вопрос → уточнение → черновик → подтверждение → submitted».</li>
-    <li>Повтор подтверждения с тем же ключом идемпотентности не создаёт новую заявку.</li>
-    <li>Руководитель может принять решение, не получая медицинскую причину.</li>
-    <li>HR получает нужные детали и может запросить уточнение.</li>
-    <li>Попытки передать пользователю чужую заявку или запрещённый фрагмент не проходят.</li>
-    <li>Автоматический smoke-тест доказывает полный сценарий; unit-тесты проверяют permissions и state machine.</li>
+    <li>README объясняет проблему, границы, быстрый запуск, demo identities, архитектуру, результаты eval и ограничения.</li>
+    <li>Одна команда Docker Compose запускает приложение; SQLite сохраняется в именованном volume, секреты передаются через environment и не входят в образ.</li>
+    <li>Простой интерфейс позволяет пройти полный сценарий и визуально показывает источники, preview, подтверждение, роль и статус.</li>
+    <li>CI выполняет format/lint, unit, integration и offline smoke tests без платного API; live-eval запускается отдельно.</li>
+    <li>Корпус имеет manifest с исходным URL, лицензией, датой получения и hashes каждого файла.</li>
+    <li>Проверен запуск из чистого клона по README; репозиторий содержит пример конфигурации без секретов.</li>
+    <li>Опубликован baseline report с ошибками и известными ограничениями, а не только агрегированным score.</li>
   </ul>
 
-  <h2>Следующее решение</h2>
-  <p>После выбора подхода C уточнить: ограничивается ли v1 американским leave, и обязателен ли manager approval в первом рабочем срезе.</p>
+  <h2>Критерии приёмки поведения</h2>
+  <ul>
+    <li>Employee проходит путь «вопрос → evidence → clarification → preview → confirmation → submitted».</li>
+    <li>Изменение черновика инвалидирует прежнее подтверждение; повтор idempotent-команды не создаёт дубликат.</li>
+    <li>HR переводит заявку в processing или needs_clarification; manager получает только разрешённую проекцию.</li>
+    <li>Пользователь не получает чужую заявку, синтетический закрытый фрагмент или чувствительное поле через ответ, retrieval context, историю либо лог.</li>
+    <li>Неподтверждаемая eligibility не выдумывается: система задаёт уточнение или направляет к Tilt/HR согласно источнику.</li>
+    <li>Offline smoke test доказывает полный сценарий, а live-eval создаёт воспроизводимый baseline report.</li>
+  </ul>
+
+  <h2>Порядок реализации</h2>
+  <ol>
+    <li>Импортировать минимальный US leave corpus и создать provenance manifest.</li>
+    <li>Описать fixtures, permission manifest, схемы, state machine и eval cases.</li>
+    <li>Собрать простой retrieval/answer baseline и сохранить первый замер.</li>
+    <li>Тестами зафиксировать доступ, version-bound confirmation, idempotency и переходы.</li>
+    <li>Реализовать один end-to-end workflow через малые проверяемые изменения.</li>
+    <li>Добавить интерфейс, Docker, CI и полноценный README.</li>
+    <li>Проверить чистый запуск и прогнать отложенный live-eval; опубликовать результаты v0.1.</li>
+  </ol>
 </article></main></body></html>

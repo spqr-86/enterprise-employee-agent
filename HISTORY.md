@@ -5,3 +5,7 @@
 - Created the project foundation and draft specification.
 - Chose GitLab Handbook HR leave-of-absence material as the candidate v1 corpus.
 - No source data or application code has been imported yet.
+- Selected Approach C for US-only v0.1: typed local leave workflow, manager read-only, and HR
+  processing/clarification actions.
+- Added the adapted development framework, local backlog, and aligned the plan, specification,
+  README, and agent context. The first work item is package/CI bootstrap.

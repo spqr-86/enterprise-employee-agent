@@ -2,7 +2,10 @@
 
 ## Current phase
 
-Only project foundation and specification exist. Do not add application code until the approach in `docs/spec-employee-agent.html` is chosen.
+The project foundation and v0.2 specification exist. Approach C (knowledge + typed workflow)
+is selected. Follow `DEVELOPMENT_FRAMEWORK.md`; do not broaden the workflow beyond US leave in
+v0.1. The next delivery step is reconciliation/bootstrap, then the corpus manifest and workflow
+contract.
 
 ## Planned stack
 
@@ -13,17 +16,21 @@ Only project foundation and specification exist. Do not add application code unt
 
 ## Planned commands
 
-- Tests: `pytest`
-- Smoke test: `pytest -m smoke`
-- Lint: `ruff check .`
-- Format check: `ruff format --check .`
+- Install: `uv sync --locked`
+- Tests: `uv run --locked pytest`
+- Smoke test: `uv run --locked pytest -m smoke`
+- Lint: `uv run --locked ruff check .`
+- Format check: `uv run --locked ruff format --check .`
 
 ## Conventions
 
 - Test a new workflow transition before implementing it.
-- Keep prompts in `prompts/`, schemas in `schemas/`, and LLM access in `llm/`.
+- Put importable code in `src/enterprise_employee_agent/` and keep leave-specific behavior in
+  its domain package. Access provider SDKs only through the shared LLM adapter.
 - Treat model output and handbook text as untrusted data.
-- Every write operation needs an explicit confirmation and an idempotency key.
+- Submission requires explicit confirmation. Every workflow mutation follows the authorization,
+  expected-version, and idempotency rules defined in the framework. Draft edits do not submit a
+  request.
 - Use conventional English commit messages, one logical change per commit.
 
 ## Boundaries
@@ -33,4 +40,5 @@ Only project foundation and specification exist. Do not add application code unt
 - Do not claim that the public GitLab corpus proves production access control or an integration with Tilt/Okta.
 - Do not push to a shared or public remote without explicit instruction.
 
-Full specification and current status are in `PLAN.md`.
+Read `DEVELOPMENT_FRAMEWORK.md` for the delivery and architecture contract, the product spec for
+behavior, and `PLAN.md` for current status.
