@@ -10,10 +10,13 @@ Related: Issue #8, `docs/decisions/0001-v0.1-evidence-granularity.md`,
 
 Produce the first reproducible, evidence-grounded answer baseline for the knowledge-answer
 categories (`normal`, `missing_data`, `unsupported_eligibility`, `out_of_scope`) that Issue #7
-left stubbed, plus real scoring for the `prompt_injection` and `provider_failure` safety
-categories that depend on a live model call. Replace `_stub_knowledge_answer` and the two
-placeholder scorers with real logic, run once against a live provider under an approved budget,
-and publish a KEEP/REVERT/INVESTIGATE decision.
+left stubbed, plus real scoring for `prompt_injection`, the one safety category whose outcome
+depends on what a live model actually does with untrusted input. Replace `_stub_knowledge_answer`
+and the two placeholder scorers with real logic, run once against a live provider under an
+approved budget, and publish a KEEP/REVERT/INVESTIGATE decision.
+
+`provider_failure` is scored offline against a fake adapter that injects a timeout/error (see
+Testing) — a real live call can't be made to fail to order, so it is not part of the live run.
 
 ## Scope
 
@@ -46,12 +49,22 @@ A trivial lexical keyword-overlap ranker, operating over every document currentl
   fixture. Concretely:
   - `data/manifest.json` documents gain an `access` field (`"public"` for both current
     documents).
-  - A synthetic restricted document is added to the corpus specifically to exercise this
-    acceptance criterion (e.g. an HR-only note with `access: "hr_only"`), plus one new eval case
-    asserting it is never retrieved for the default `employee` role even when its content
-    keyword-overlaps the question.
+  - A synthetic restricted document is added at
+    `data/source/people-policies/_synthetic_restricted/hr-only-note.md`, fully authored for this
+    test (not derived from the real GitLab handbook snapshot, so it carries no provenance/licence
+    fields in `manifest.json` beyond `access: "hr_only"` and its own sha256) — it exists only to
+    give the forbidden-fixture acceptance criterion something concrete to check.
+  - One new eval case (`forbidden-document-retrieval`, category `out_of_scope` or a new
+    `forbidden_document` safety category — implementation plan picks the schema shape) asserts
+    this document is never retrieved for the default `employee` role even when its content
+    keyword-overlaps the question. This is a retrieval-layer check, scored offline against the
+    fake adapter like the other safety cases — it does not need a live model call.
   - The retrieval step receives the caller's role/access level as an input and drops any
     document whose `access` the caller doesn't satisfy before scoring, not after.
+  - This brings the case set to 15 (the 14 in `evals/cases/v0.1.yaml` plus this one). All "14
+    cases" language below becomes 15 once this case is added; it does not exist yet as of this
+    spec revision — adding it is part of the Issue #8 implementation, not a prerequisite for
+    approving the design.
 
 This is deliberately simple, not a placeholder: with the current two-document, topically
 asymmetric corpus (`_index.md` company-wide overview vs. `us.md` detailed US policy — every
@@ -66,16 +79,28 @@ measurable signal to discriminate on, so Recall@k is not trivially 100%.
 - Provider: OpenRouter. Live baseline model: GPT-5 mini (primary). Second model for comparison:
   DeepSeek V3.2. Both selected per-run, not frozen into code — the adapter takes model id and
   parameters as configuration.
+- Issue #8 asks for "one configured live baseline"; running two models is a deliberate addition
+  for comparison data, not two baselines. **GPT-5 mini is the configured baseline that the
+  KEEP/REVERT/INVESTIGATE decision is made on.** DeepSeek V3.2's results are reported alongside
+  it (same report, same metrics) but are informational only — they do not change the decision.
+  If GPT-5 mini fails outright (e.g. unavailable) DeepSeek V3.2 does not implicitly become the
+  baseline; that requires a new explicit run.
 - The adapter returns a validated answer contract: cited fragment IDs (document IDs, per
-  decision 0001), the answer text, and an explicit abstain/escalate flag when the retrieved
-  evidence (or its absence) does not support an answer.
+  decision 0001), the answer text, and an explicit abstain flag. `abstain` means "no retrieved
+  evidence supports any answer" — it is not the same as asking a clarifying question. A response
+  can carry a citation, an answer, and a clarifying question together (this is exactly what
+  `missing-data-military-leave` expects: partial USERRA answer, cited, plus a question about
+  branch/duty type); only the true no-evidence case sets `abstain`.
 - Model id, parameters, and prompt hash are recorded with every run, per Issue #8's scope
   constraint.
 
 ## Budget guard
 
-- Hard ceiling: **$0.50** per eval run. Expected cost for the full 14-case run across both
-  models is ≈$0.03 (≈16x headroom for retries/reruns within a session).
+- Hard ceiling: **$0.50** per eval run. Of the 15 cases, only the 9 knowledge (`normal`,
+  `missing_data`, `unsupported_eligibility`, `out_of_scope`) and `prompt_injection` cases call a
+  live model; the other 6 safety/retrieval cases are scored offline against a fake adapter (see
+  Testing). Expected cost for those 9 cases × 2 models ≈$0.03 (≈16x headroom for retries/reruns
+  within a session).
 - Two-part guard, since cost is only known after a call completes and a post-response-only check
   can't stop the call that pushes the run over:
   - **Pre-call reservation**: before each call, the runner estimates worst-case cost from
@@ -91,19 +116,25 @@ measurable signal to discriminate on, so Recall@k is not trivially 100%.
 
 ## Offline fixtures
 
-- During the one approved live run, every raw provider response for all 14 cases and both models
-  is recorded into a single file, `evals/fixtures/v0.1-live.json` (list of records: case id,
+- During the one approved live run, every raw provider response for the 9 model-calling cases
+  (see Budget guard) across both models is recorded into a single file, `evals/fixtures/v0.1-live.json` (list of records: case id,
   provider, model, request, raw response, usage/cost).
 - This file is committed to git. The repository is private and the only case with a synthetic
-  name (`prompt_injection`'s "Jane Doe") is fictional, so there is no data-handling concern.
+  name (`prompt_injection`'s "Jane Doe") is fictional. The adapter's recorded `request` field is
+  limited to what the eval actually needs to reproduce: the case's question/scenario text, the
+  retrieved document ID(s), model id, and generation parameters — never the OpenRouter API key,
+  auth headers, or other transport-level fields, which the adapter strips before the record is
+  built. This scoping, not just the repo being private, is what makes committing the fixture
+  safe.
 - Offline tests and CI use a fake adapter that reads from this file instead of calling the
   network. No test in CI makes a paid call, per Issue #8's acceptance criteria.
 - If the corpus, prompts, or model selection change later, the fixture file is regenerated by a
   new approved live run — it is not hand-edited.
-- Each record in the fixture stores the prompt hash and corpus revision (from `manifest.json`)
-  it was generated against. Offline tests check the fixture's stamped values against the current
-  prompt/corpus before trusting a record — a stale fixture fails loudly instead of silently
-  passing CI against an outdated response.
+- Each record in the fixture stamps the prompt hash, corpus revision (from `manifest.json`),
+  model id, generation parameters, and the eval schema version it was generated against. Offline
+  tests check all five against current values before trusting a record — a stale fixture (any
+  one of these changed since the live run) fails loudly instead of silently passing CI against
+  an outdated response.
 
 ## `expects_clarification` (deferred)
 
@@ -123,8 +154,11 @@ introduces a real multi-turn clarification workflow.
 - Runner: budget guard aborts a simulated run that would exceed $0.50; fixture-backed fake
   adapter drives `provider_failure` (timeout/error) and `prompt_injection` scoring without any
   paid call.
-- Live: one approved run against OpenRouter (GPT-5 mini + DeepSeek V3.2), all 14 cases, recording
-  `evals/fixtures/v0.1-live.json` and producing the baseline report.
+- Live: one approved run against OpenRouter (GPT-5 mini + DeepSeek V3.2), the 9 model-calling
+  cases, recording `evals/fixtures/v0.1-live.json` and producing the baseline report. The
+  remaining 6 cases (forbidden disclosure, stale confirmation, duplicate submission, provider
+  failure, role-view consistency, forbidden-document retrieval) are exercised offline only, as
+  part of the same test suite, not the live run.
 
 ## Open questions for the implementation plan
 
@@ -138,16 +172,18 @@ implementation plan must settle these explicitly rather than let the code decide
   retrieved set, and how (if at all) is claim-to-content support checked.
 - How groundedness and task success are actually scored — the current scorer handles evidence-ID
   overlap and abstention, not free-text `expected` comparison.
-- The exact answer-contract shape (one enum vs. multiple flags; whether answer+citation+abstain
-  can co-occur; behavior for an unknown/forbidden/non-retrieved citation).
+- The exact answer-contract shape (one enum vs. multiple flags; behavior for an
+  unknown/forbidden/non-retrieved citation). Whether answer+citation+abstain can co-occur is
+  resolved above (abstain is reserved for the no-evidence case, distinct from a clarifying
+  question).
 - Exact model IDs, prompt version, generation parameters, timeout, and retry policy, fixed before
   the live run.
-- Decision topology across two models: one verdict per model, or a single verdict with a rule for
-  picking the primary when they disagree.
 
 ## Baseline report and decision
 
 Per Issue #8's acceptance criteria: report Recall@1, groundedness, abstention, task success,
-latency, tokens, cost, counts and percentages, and raw failures for both models. End with
-KEEP/REVERT/INVESTIGATE and a concrete next action; any threshold change after seeing results
-must carry a written reason, not a silent adjustment.
+latency, tokens, cost, counts and percentages, and raw failures for both models — GPT-5 mini as
+the decision-bearing configured baseline, DeepSeek V3.2 alongside it for comparison only (see
+Provider-neutral adapter). End with KEEP/REVERT/INVESTIGATE on GPT-5 mini and a concrete next
+action; any threshold change after seeing results must carry a written reason, not a silent
+adjustment.
