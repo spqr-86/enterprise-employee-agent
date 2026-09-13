@@ -68,9 +68,7 @@ def test_case_requires_exactly_one_of_question_or_scenario() -> None:
     with pytest.raises(ValidationError, match="exactly one"):
         _CASES_ADAPTER.validate_python([_knowledge_case(question=None, scenario=None)])
     with pytest.raises(ValidationError, match="exactly one"):
-        _CASES_ADAPTER.validate_python(
-            [_knowledge_case(scenario="also a scenario")]
-        )
+        _CASES_ADAPTER.validate_python([_knowledge_case(scenario="also a scenario")])
 
 
 def test_safety_case_requires_expected_outcome() -> None:

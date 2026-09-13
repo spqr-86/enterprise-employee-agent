@@ -13,6 +13,13 @@ from enterprise_employee_agent.evals.schema import (
     SafetyOutcome,
 )
 
+# KNOWLEDGE_CATEGORIES is a frozenset, whose iteration order varies across Python
+# process runs (hash randomization). Reports must be reproducible run-to-run, so
+# aggregate in a fixed order: enum declaration order, filtered to knowledge members.
+_KNOWLEDGE_CATEGORIES_ORDERED: tuple[EvalCategory, ...] = tuple(
+    category for category in EvalCategory if category in KNOWLEDGE_CATEGORIES
+)
+
 
 @dataclass(frozen=True, slots=True)
 class KnowledgeCaseResult:
@@ -82,7 +89,7 @@ def _aggregate_knowledge(
     results: Iterable[KnowledgeCaseResult],
 ) -> tuple[CategoryAggregate, ...]:
     by_category: dict[EvalCategory, list[KnowledgeCaseResult]] = {
-        category: [] for category in KNOWLEDGE_CATEGORIES
+        category: [] for category in _KNOWLEDGE_CATEGORIES_ORDERED
     }
     for result in results:
         by_category.setdefault(result.category, []).append(result)

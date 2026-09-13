@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from enterprise_employee_agent.evals.schema import KNOWLEDGE_CATEGORIES, SAFETY_CATEGORIES
 from enterprise_employee_agent.evals.validator import load_cases, validate_dataset
 from enterprise_employee_agent.knowledge.corpus import load_manifest

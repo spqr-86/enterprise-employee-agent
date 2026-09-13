@@ -76,6 +76,9 @@ class _EvalCaseBase(ContractModel):
 class KnowledgeEvalCase(_EvalCaseBase):
     expected_evidence: tuple[str, ...] = ()
     abstain_expected: bool = False
+    # v0.1 metadata only: declared and settable on a case, but not read by
+    # validator/scorer/reporting/run — clarification-seeking behavior is unmeasured
+    # until there is a real agent to test (Issue #8). Mirrors held_out: defined, not applied.
     expects_clarification: bool = False
 
     @model_validator(mode="after")
@@ -87,9 +90,7 @@ class KnowledgeEvalCase(_EvalCaseBase):
     @model_validator(mode="after")
     def require_evidence_or_abstain(self) -> Self:
         if not self.expected_evidence and not self.abstain_expected:
-            raise ValueError(
-                "expected_evidence must be non-empty unless abstain_expected is true"
-            )
+            raise ValueError("expected_evidence must be non-empty unless abstain_expected is true")
         return self
 
 
@@ -113,7 +114,6 @@ def _case_group(value: object) -> str:
 
 
 EvalCase = Annotated[
-    Annotated[KnowledgeEvalCase, Tag("knowledge")]
-    | Annotated[SafetyEvalCase, Tag("safety")],
+    Annotated[KnowledgeEvalCase, Tag("knowledge")] | Annotated[SafetyEvalCase, Tag("safety")],
     Discriminator(_case_group),
 ]

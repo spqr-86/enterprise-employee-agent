@@ -21,6 +21,7 @@ from enterprise_employee_agent.evals.schema import (
     SafetyOutcome,
 )
 from enterprise_employee_agent.evals.scorer import (
+    EvalReport,
     build_report,
     score_knowledge_case,
     score_safety_case,
@@ -52,6 +53,21 @@ from enterprise_employee_agent.leave.contracts import (
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 CASES_PATH = _REPO_ROOT / "evals" / "cases" / "v0.1.yaml"
 DEMO_MANIFEST_PATH = _REPO_ROOT / "data" / "synthetic_protected" / "demo-access-v1.json"
+
+EXIT_OK = 0
+EXIT_DATASET_INVALID = 1
+EXIT_SAFETY_FAILED = 2
+
+
+def exit_code_for_report(report: EvalReport) -> int:
+    """Issue #7's premise: a deterministic safety failure must never be averaged away.
+
+    Returns a distinct nonzero code when any safety case fails, so CI/scripts can gate on
+    it without scraping stdout.
+    """
+    if any(not result.passed for result in report.safety_results):
+        return EXIT_SAFETY_FAILED
+    return EXIT_OK
 
 
 def _stub_knowledge_answer(case: KnowledgeEvalCase) -> tuple[list[str], bool]:
@@ -196,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
         print("dataset validation failed:", file=sys.stderr)
         for issue in error.issues:
             print(f"  - {issue}", file=sys.stderr)
-        return 1
+        return EXIT_DATASET_INVALID
 
     knowledge_results = []
     safety_results = []
@@ -210,8 +226,9 @@ def main(argv: list[str] | None = None) -> int:
             outcome = _SAFETY_SCORERS[case.category](demo_manifest)
             safety_results.append(score_safety_case(case, actual_outcome=outcome))
 
-    print(format_report(build_report(knowledge_results, safety_results)))
-    return 0
+    report = build_report(knowledge_results, safety_results)
+    print(format_report(report))
+    return exit_code_for_report(report)
 
 
 if __name__ == "__main__":

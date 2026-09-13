@@ -6,7 +6,10 @@ from enterprise_employee_agent.evals.scorer import EvalReport
 
 
 def format_report(report: EvalReport) -> str:
-    lines = ["Knowledge categories:"]
+    lines = [
+        "Knowledge categories (STUB — no retrieval yet, Issue #8; "
+        "measures the pipeline, not the agent):"
+    ]
     for aggregate in report.knowledge:
         if aggregate.total == 0:
             lines.append(f"  {aggregate.category.value}: n/a (0 cases)")
