@@ -127,3 +127,17 @@
   deleted (worktree removed, local branch deleted, remote branch auto-deleted by squash-merge).
   main fast-forwarded to `05b3d73`; 59/59 tests pass on merged main. Next project step: Issue #8
   (measured retrieval and answer baseline) — no plan drafted yet.
+- Started Issue #8. Reviewed money available for a live baseline: OpenAI account is empty
+  (429), OpenRouter has $1.71 left (shared with the fast-agent/delegate projects), no direct
+  Anthropic key outside the subscription. Researched OpenRouter pricing; agreed with the owner
+  on GPT-5 mini ($0.25/$2.00 per 1M tokens) as the primary baseline model and DeepSeek V3.2
+  ($0.28/$0.40) as a second comparison model, estimated at ~$0.03 total for both runs against the
+  14-case v0.1 dataset — far under the $1.71 balance. Declined `:free`-tier models as unstable
+  for a reproducible baseline. Classified the work as architectural (new LLM adapter + retrieval,
+  changes the `EvalReport`/`run.py` interface other code depends on) and started the
+  `superpowers:brainstorming` flow: read Issue #8's acceptance criteria, decision
+  `0001-v0.1-evidence-granularity` (v0.1 evidence is whole-document, corpus has only 2
+  documents), and the current placeholder scorers in `evals/run.py` that #8 must replace. Asked
+  the owner the first design question (real tiny lexical-ranker over the 2 documents vs.
+  hardcoding "return both") — session saved before an answer arrived; continues in the next
+  session from that question.
