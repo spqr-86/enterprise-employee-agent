@@ -168,3 +168,10 @@
   $0.50 budget, run artifact in `experiments/issue-8/` separate from hand-written offline
   fixtures, 9 cases × 2 models live. Groundedness and task success rely on owner manual review.
   Commit `298539b`. Next: owner reviews revision 3, then `writing-plans`.
+- Owner approved Issue #8 spec revision 3. Wrote the implementation plan
+  `docs/superpowers/plans/2026-09-13-retrieval-answer-baseline-implementation.md` (14 TDD tasks,
+  from branch/spec approval through the gated paid run and PR). Verified before writing: spec
+  retrieval numbers, a forbidden-document probe that ranks the HR-only fixture first without the
+  filter (10 vs 8 vs 4), and current OpenRouter model IDs/prices (`openai/gpt-5-mini` accepts no
+  `temperature`; expected run cost ≈ $0.08, not ≈ $0.03). Open for the owner: framework §10
+  retry/repair vs the spec's no-retry rule, and the execution mode.
