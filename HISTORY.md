@@ -155,3 +155,16 @@
   nontrivial problem, already a known limitation from Issue #7). Wrote and committed the design
   spec: `docs/superpowers/specs/2026-09-13-retrieval-answer-baseline-design.md` (commit
   `d7476ba`). Next: owner reviews the spec, then `writing-plans` for the implementation plan.
+- Put the Issue #8 spec through three independent reviews and rewrote it to revision 3 (draft).
+  Codex found the spec silently narrowed Issue #8's chunking scope and wrongly credited Issue #6
+  with document authorization (decision 0002 makes the chunking deferral explicit). A second
+  review (gpt-5.6-sol) found a 14/15 case-count mismatch introduced by the first fix, no
+  live/offline topology, and no rule for which of two models carries the decision. An adversarial
+  review then showed Recall@1 is 7/7 for a constant "always us.md" ranker, so the k=1
+  justification was false (decision 0003: Recall@1 reported with that control, not
+  decision-bearing). Revision 3: restricted fixture in `data/synthetic_protected/` (a provenance-
+  less manifest entry would raise `CorpusError`), answered/abstained/escalated contract,
+  prompt-injection mapping, KEEP/REVERT/INVESTIGATE rule tied to framework thresholds, cumulative
+  $0.50 budget, run artifact in `experiments/issue-8/` separate from hand-written offline
+  fixtures, 9 cases × 2 models live. Groundedness and task success rely on owner manual review.
+  Commit `298539b`. Next: owner reviews revision 3, then `writing-plans`.
