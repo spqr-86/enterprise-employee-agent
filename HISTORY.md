@@ -63,3 +63,16 @@
   (`chunking_version: none-v1`, two whole-document fragments). Needs an explicit choice between
   adding real chunking for Recall@k, or keeping whole-document evidence IDs for v0.1 and scoring
   "cited the right document" only. Not yet decided.
+- Decided: v0.1 keeps whole-document evidence IDs, no sub-document chunking. Recorded in
+  `docs/decisions/0001-v0.1-evidence-granularity.md`. Checked against Issue #7's acceptance
+  criteria — no conflict, since `chunking_version: none-v1` makes "fragment ID" equal to
+  document ID at this version.
+- Ran the architectural-path brainstorming for Issue #7's schema/validator/scorer design.
+  Approved design recorded in
+  `docs/superpowers/specs/2026-09-13-micro-eval-dataset-design.md`: pydantic discriminated-union
+  case schema (`src/enterprise_employee_agent/evals/schema.py`, following the `ContractModel`
+  convention in `leave/contracts.py`), a dataset-level validator, a scorer that keeps
+  deterministic safety/workflow outcomes (pass/fail) strictly separate from percentage-based
+  knowledge metrics (Recall@k/groundedness/abstention), and a `held_out` schema field reserved
+  for a future partition policy (not applied yet — all 14 cases stay open). Next: `writing-plans`
+  then TDD implementation.
