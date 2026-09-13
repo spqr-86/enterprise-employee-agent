@@ -31,3 +31,9 @@
 - PR #4 passed independent QA and CI, was accepted, and was squash-merged as `1b623d0`; Issue #3
   closed. Full v0.1 grooming then created milestone `v0.1` and Issues #5–#16 with explicit
   dependencies. Only #5 and #6 are Ready; #5 is the next implementation task.
+- Issue #5 imported the minimal company-wide and US leave-of-absence subset (two byte-stable
+  Markdown files) into `data/source/` and recorded provenance, licence, SHA-256, byte size, and
+  stable IDs in `data/manifest.json`. Added a deterministic corpus validator with a CLI
+  (`make check-corpus`) and unit tests for missing, extra, hash/byte-mismatched, duplicate, and
+  path-traversal cases; `data/README.md` documents selection, revision, refresh boundary, and
+  reproduction.

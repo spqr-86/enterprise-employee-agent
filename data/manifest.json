@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "corpus_version": "us-leave-2026-09-12",
+  "source": {
+    "repository": "https://gitlab.com/gitlab-com/content-sites/handbook.git",
+    "snapshot_repository": "https://github.com/spqr-86/corporate-knowledge-assistant.git",
+    "snapshot_revision": "f7b8be0fca997b7f7571a0f63ca1ac75420e4bb6",
+    "snapshot_revision_date": "2026-07-16T20:36:03Z",
+    "handbook_added_in": "4ce1283a98dac1a50a4d5bb59f45791c9ac809b5",
+    "retrieved_at": "2026-07-03T16:48:48Z",
+    "clone_command": "git clone --depth 1 https://gitlab.com/gitlab-com/content-sites/handbook.git",
+    "licence": "MIT",
+    "licence_file": "data/HANDBOOK_LICENSE"
+  },
+  "normalization_version": "raw-v1",
+  "chunking_version": "none-v1",
+  "documents": [
+    {
+      "id": "people-policies/leave-of-absence/_index.md",
+      "title": "Leave of Absence",
+      "source_path": "people-policies/leave-of-absence/_index.md",
+      "source_url": "https://handbook.gitlab.com/handbook/people-policies/leave-of-absence/",
+      "path": "people-policies/leave-of-absence/_index.md",
+      "sha256": "b53e80b70775ba34d433dac116c0881abcabc221761257ebe5767b6e0037b110",
+      "bytes": 3576
+    },
+    {
+      "id": "people-policies/leave-of-absence/us.md",
+      "title": "United States Leave of Absence Policies",
+      "source_path": "people-policies/leave-of-absence/us.md",
+      "source_url": "https://handbook.gitlab.com/handbook/people-policies/leave-of-absence/us/",
+      "path": "people-policies/leave-of-absence/us.md",
+      "sha256": "1e223dc94e37a6fd099275edc4670f527caf1c4e8ade4a3c1e48d18c16ef3111",
+      "bytes": 38619
+    }
+  ]
+}

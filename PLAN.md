@@ -69,9 +69,12 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
 - Process hardening from PR #4 is integrated and Issue #3 is complete: preflight, Issue/PR
   templates, lifecycle labels, squash-only merge, and a private-repository manual gate fallback.
 - Full v0.1 grooming created milestone `v0.1` and dependency-linked Issues #5–#16. Issues #5 and
-  #6 are Ready; later Issues remain Draft until their declared dependencies exist. Issue #5 is
-  the next implementation task.
-- No product behavior, corpus data, or external integration exists.
+  #6 are Ready; later Issues remain Draft until their declared dependencies exist.
+- Issue #5 imported the minimal company-wide and US leave-of-absence subset into `data/source/`
+  with a provenance manifest, a deterministic validator, and tests. Issue #6 is the next
+  implementation task.
+- No product behavior or external integration exists; the frozen corpus is imported and
+  validated offline.
 
 ## 7. Next steps
 
