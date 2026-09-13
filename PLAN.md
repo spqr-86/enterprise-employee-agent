@@ -71,26 +71,27 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
 - Full v0.1 grooming created milestone `v0.1` and dependency-linked Issues #5–#16. Issues #5 and
   #6 are Ready; later Issues remain Draft until their declared dependencies exist.
 - Issue #5 imported the minimal company-wide and US leave-of-absence subset into `data/source/`
-  with a provenance manifest, a deterministic validator, and tests. Issue #6 is the next
-  implementation task.
+  with a provenance manifest, a deterministic validator, and tests; PR #19 is integrated and
+  Issue #5 is complete.
+- Issue #6 implementation defines the versioned leave contract, synthetic identities and
+  permission manifest, typed command/confirmation/audit boundaries, exact role projections,
+  state transitions, errors, and consistency tests. It is awaiting independent QA and owner
+  acceptance on `feat/6-workflow-contracts`.
 - No product behavior or external integration exists; the frozen corpus is imported and
   validated offline.
 
 ## 7. Next steps
 
-1. Implement Issue #5: import only the minimal US leave subset and record source revision, URL,
-   retrieval date, licence, hashes, and stable fragment IDs.
-2. Implement Issue #6: define demo identities, field-level projections, commands, state machine,
-   error behavior, confirmation, idempotency, and audit contracts.
-3. Create 10–15 reviewed micro-eval cases in Issue #7 and build the simplest retrieval/answer
+1. Integrate Issue #6 after independent QA and owner acceptance.
+2. Create 10–15 reviewed micro-eval cases in Issue #7 and build the simplest retrieval/answer
    baseline in Issue #8; select the live model and budget at that gate, then publish the first
    error table.
-4. Test and implement authorization, version-bound confirmation, idempotency, workflow
+3. Test and implement authorization, version-bound confirmation, idempotency, workflow
    transitions, persistence, and the fake-adapter vertical slice.
-5. Integrate the knowledge and workflow paths, then build a server-rendered FastAPI interface
+4. Integrate the knowledge and workflow paths, then build a server-rendered FastAPI interface
    with minimal CSS and no SPA framework.
-6. Complete Docker Compose, offline CI, README, and clean-clone verification.
-7. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
+5. Complete Docker Compose, offline CI, README, and clean-clone verification.
+6. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
    limits, and release decision.
 
 ## 8. Open decisions

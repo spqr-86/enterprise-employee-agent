@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "identities": [
+    {
+      "identity_id": "employee-alice",
+      "display_name": "Alice Example",
+      "role": "employee",
+      "reports_to": "manager-morgan"
+    },
+    {
+      "identity_id": "employee-bob",
+      "display_name": "Bob Example",
+      "role": "employee",
+      "reports_to": "manager-morgan"
+    },
+    {
+      "identity_id": "employee-carol",
+      "display_name": "Carol Example",
+      "role": "employee",
+      "reports_to": "manager-riley"
+    },
+    {
+      "identity_id": "manager-morgan",
+      "display_name": "Morgan Manager",
+      "role": "manager",
+      "reports_to": null
+    },
+    {
+      "identity_id": "manager-riley",
+      "display_name": "Riley Manager",
+      "role": "manager",
+      "reports_to": null
+    },
+    {
+      "identity_id": "hr-harper",
+      "display_name": "Harper HR",
+      "role": "hr",
+      "reports_to": null
+    }
+  ],
+  "permission_rules": [
+    {
+      "role": "employee",
+      "request_scope": "own",
+      "projection": "employee",
+      "allowed_commands": [
+        "create_draft",
+        "update_draft",
+        "cancel_draft",
+        "confirm_submit",
+        "provide_clarification"
+      ]
+    },
+    {
+      "role": "manager",
+      "request_scope": "direct_reports",
+      "projection": "manager",
+      "allowed_commands": []
+    },
+    {
+      "role": "hr",
+      "request_scope": "all",
+      "projection": "hr",
+      "allowed_commands": [
+        "start_processing",
+        "request_clarification"
+      ]
+    }
+  ],
+  "negative_cases": [
+    {
+      "actor_id": "employee-alice",
+      "target_employee_id": "employee-bob",
+      "action": "view_request",
+      "reason": "cross_employee_access"
+    },
+    {
+      "actor_id": "manager-riley",
+      "target_employee_id": "employee-alice",
+      "action": "view_request",
+      "reason": "non_report_manager_access"
+    },
+    {
+      "actor_id": "employee-alice",
+      "target_employee_id": "employee-alice",
+      "action": "start_processing",
+      "reason": "employee_hr_action"
+    }
+  ]
+}

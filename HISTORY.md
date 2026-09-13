@@ -37,3 +37,12 @@
   (`make check-corpus`) and unit tests for missing, extra, hash/byte-mismatched, duplicate, and
   path-traversal cases; `data/README.md` documents selection, revision, refresh boundary, and
   reproduction.
+- PR #19 passed CI and independent QA, received owner acceptance, and was squash-merged as
+  `4ac5544`; Issue #5 closed and the integrated `main` passed corpus, lint, format, unit, and
+  smoke checks.
+- Issue #6 implementation added the v0.1 leave workflow contract, validated synthetic identities
+  and role permissions, command-specific client inputs, server-bound identity context,
+  request/version/payload confirmation, idempotency fingerprints, audit invariants, independent
+  role projections, and security regression tests. Adversarial review initially found replay,
+  fail-open access, identity spoofing, projection leakage, and audit/idempotency weaknesses; all
+  reproducible Critical/High findings were fixed and the final adversarial verdict was PASS.
