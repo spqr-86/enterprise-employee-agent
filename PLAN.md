@@ -75,8 +75,13 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   Issue #5 is complete.
 - Issue #6 implementation defines the versioned leave contract, synthetic identities and
   permission manifest, typed command/confirmation/audit boundaries, exact role projections,
-  state transitions, errors, and consistency tests. It is awaiting independent QA and owner
-  acceptance on `feat/6-workflow-contracts`.
+  state transitions, errors, and consistency tests. PR #20 passed independent QA and was accepted
+  and squash-merged as `4d6002e` on 2026-09-13; Issue #6 is complete and `main` is verified (21
+  unit tests pass).
+- Issue #7 (micro-eval dataset) has a content-only draft ahead of its schema/validator/scorer:
+  `evals/cases/draft-v0.1-micro-eval.md`, 14 cases across the required categories. Open decision
+  before the versioned schema can be written: whether to add sub-document chunking for real
+  Recall@k or keep whole-document evidence IDs for v0.1.
 - No product behavior or external integration exists; the frozen corpus is imported and
   validated offline.
 

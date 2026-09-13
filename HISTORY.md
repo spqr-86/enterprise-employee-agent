@@ -48,3 +48,18 @@
   reproducible Critical/High findings were fixed and the final adversarial verdict was PASS.
 - PR #20 contains this Issue #6 implementation; CI, adversarial review, and independent QA are
   PASS for head `b197547`. It is awaiting owner acceptance and squash merge.
+
+## 2026-09-13
+
+- Owner accepted PR #20; squash-merged as `4d6002e`, task branch deleted, Issue #6 closed
+  automatically. Post-merge `main` verified: 21 unit tests pass.
+- Drafted the content half of Issue #7 ahead of its schema/validator/scorer code: 14 micro-eval
+  cases in `evals/cases/draft-v0.1-micro-eval.md` (not yet a versioned artifact), covering normal
+  questions, missing data, unsupported eligibility, out-of-corpus jurisdiction (abstain), prompt
+  injection, forbidden disclosure, stale confirmation, duplicate submission, provider failure,
+  and role views. 8 of the 14 cases exercise the Issue #6 workflow/authorization logic directly
+  and are gradeable without a retrieval baseline.
+- Open decision before writing the Issue #7 schema: the corpus has no sub-document chunking
+  (`chunking_version: none-v1`, two whole-document fragments). Needs an explicit choice between
+  adding real chunking for Recall@k, or keeping whole-document evidence IDs for v0.1 and scoring
+  "cited the right document" only. Not yet decided.
