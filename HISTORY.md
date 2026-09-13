@@ -141,3 +141,17 @@
   the owner the first design question (real tiny lexical-ranker over the 2 documents vs.
   hardcoding "return both") — session saved before an answer arrived; continues in the next
   session from that question.
+- Completed the Issue #8 brainstorming, continuing from the retrieval question. Corrected an
+  initial misjudgment: the two-document corpus looked too small for a real ranker to matter, but
+  every one of the 14 v0.1 eval cases cites only `us.md` as evidence, never `_index.md` — the
+  corpus is topically asymmetric, so a lexical keyword-overlap ranker has genuine signal to
+  discriminate on. Decided: overlap ranker over all corpus documents, fixed `k=1`, empty result
+  (zero overlap everywhere) forces abstention rather than an arbitrary fallback document. Also
+  decided: `httpx` (not the `openai` SDK) for the OpenRouter HTTP client, keeping the adapter
+  provider-neutral in shape; a hard $0.50 per-run budget-guard ceiling (~16x the expected $0.03
+  cost); a single committed fixture file `evals/fixtures/v0.1-live.json` recorded from one live
+  run, backing all offline/CI tests through a fake adapter; and `expects_clarification` stays
+  metadata-only in v0.1 (only 1 of 14 cases uses it, detecting it reliably is a separate
+  nontrivial problem, already a known limitation from Issue #7). Wrote and committed the design
+  spec: `docs/superpowers/specs/2026-09-13-retrieval-answer-baseline-design.md` (commit
+  `d7476ba`). Next: owner reviews the spec, then `writing-plans` for the implementation plan.
