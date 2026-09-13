@@ -88,3 +88,37 @@
   request-viewing service exists yet; `provider_failure` has no LLM adapter to call (Issue #8)
   and is scored against a fixed placeholder outcome, clearly commented as such. Not yet executed
   — Petr was asked subagent-driven vs. inline, no answer yet when the session was saved.
+- Petr chose subagent-driven-development. Executed all 7 tasks of the Issue #7 implementation
+  plan on worktree branch `worktree-issue-7-micro-eval-dataset` (base `8aaa8ab`): PyYAML dep →
+  `evals/schema.py` → `evals/validator.py` → `evals/scorer.py` → `evals/reporting.py` →
+  `evals/cases/v0.1.yaml` (14 cases) → `evals/run.py` CLI. Each task got a fresh implementer +
+  independent task review; Task 7's review found 3 of the plan's own literal safety-scoring
+  functions were tautological/dead-code despite matching the plan verbatim — a plan defect, not
+  implementer error: `_score_duplicate_submission` proved `f(x)==f(x)` (same idempotency_key both
+  calls, never exercised `command_fingerprint`'s deliberate key-exclusion), `_score_prompt_injection`
+  had an unreachable branch (the demo manifest's own validator guarantees the condition it checks)
+  and measured access-denial-fixture completeness rather than injection resistance, and
+  `_score_role_view` compared identical literals built from one shared dict. Ruled to fix
+  `duplicate_submission` for real (two different idempotency keys) and honestly comment the other
+  two as placeholders rather than fake logic — re-review confirmed all addressed, no new breakage.
+  Final whole-branch review (opus) then found 1 Critical (CI red: ruff lint/format failures) + 4
+  Important (knowledge report showed stub-derived 100% scores with no marker distinguishing them
+  from a real agent measurement; `expects_clarification` field declared and set but never read
+  anywhere — dead field; report category ordering was nondeterministic across process runs
+  because it iterated a `frozenset` of `StrEnum` members; `main()` returned exit 0 even when the
+  deterministic-safety section showed FAIL, so no script could detect a safety failure without
+  scraping stdout). Fixed all five in one pass (no second fix wave, per process): lint/format
+  clean, stub marker added to the report header, `expects_clarification` documented as v0.1
+  metadata-only, deterministic enum-declaration-order iteration, and a distinct exit code (2) for
+  a safety failure vs. 1 for dataset validation failure. Re-review: all addressed, no new
+  breakage. End state: 59/59 tests passing, ruff clean, 9 commits ahead of main. 6 Minor findings
+  from the final review parked as backlog, not blocking (one-sided safety checks lack negative
+  controls, a category-name typo produces misleading validation errors, `_REPO_ROOT` path
+  resolution breaks under a non-editable install, `abstain_expected` with non-empty
+  `expected_evidence` is silently accepted rather than rejected, no `make eval` target or README
+  pointer to the new CLI, and the `out-of-scope-texas-detail` case's "abstain beyond the table"
+  nuance from the source draft isn't machine-captured in the schema). Also noted: the plan's own
+  Task 6 mapping table has a wording inconsistency ("both docs" vs. the authoritative YAML/draft
+  giving only `us.md`) — a plan-text typo, not a dataset bug; the implementer correctly followed
+  the YAML. Asked Petr how to integrate the branch (merge/PR/keep) — awaiting answer when this
+  sync ran.
