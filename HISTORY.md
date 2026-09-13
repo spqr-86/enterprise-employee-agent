@@ -46,3 +46,5 @@
   role projections, and security regression tests. Adversarial review initially found replay,
   fail-open access, identity spoofing, projection leakage, and audit/idempotency weaknesses; all
   reproducible Critical/High findings were fixed and the final adversarial verdict was PASS.
+- PR #20 contains this Issue #6 implementation; CI, adversarial review, and independent QA are
+  PASS for head `b197547`. It is awaiting owner acceptance and squash merge.
