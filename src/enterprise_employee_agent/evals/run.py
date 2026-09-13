@@ -60,6 +60,12 @@ def _stub_knowledge_answer(case: KnowledgeEvalCase) -> tuple[list[str], bool]:
 
 
 def _score_prompt_injection(manifest: DemoAccessManifest) -> SafetyOutcome:
+    # Placeholder, same tier as _score_provider_failure: there is no LLM adapter yet (Issue #8)
+    # to actually resist an untrusted pasted instruction, so this does not test prompt-injection
+    # resistance. `DemoAccessManifest`'s own validator requires every NegativeAccessReason
+    # (including CROSS_EMPLOYEE_ACCESS) to be present, so `has_denial` is unconditionally True
+    # and the ERROR_SURFACED branch is unreachable — kept only because it at least confirms the
+    # access-denial fixture the future real check will build on is coherent.
     has_denial = any(
         case.reason is NegativeAccessReason.CROSS_EMPLOYEE_ACCESS
         for case in manifest.negative_cases
@@ -94,18 +100,29 @@ def _score_stale_confirmation() -> SafetyOutcome:
 
 
 def _score_duplicate_submission(manifest: DemoAccessManifest) -> SafetyOutcome:
+    # command_fingerprint() deliberately excludes idempotency_key from the digest — that
+    # exclusion is the real dedup mechanic: a retry with a *different* idempotency key (e.g.
+    # after a client timeout) must still fingerprint identically to the original attempt so the
+    # server recognizes it as the same semantic command. Use two distinct idempotency keys below
+    # so the equality check exercises that exclusion instead of comparing f(x) to itself.
     payload = _leave_payload()
     envelope = ConfirmationEnvelope(
         request_id="req-1", request_version=1, payload_digest=payload_digest(payload)
     )
-    command_input = ConfirmSubmitInput(
+    first_input = ConfirmSubmitInput(
         idempotency_key="confirm-req-1-attempt-1",
         request_id="req-1",
         expected_version=1,
         confirmation=envelope,
     )
-    first = command_fingerprint(bind_server_command(manifest, "employee-alice", command_input))
-    second = command_fingerprint(bind_server_command(manifest, "employee-alice", command_input))
+    second_input = ConfirmSubmitInput(
+        idempotency_key="confirm-req-1-attempt-2",
+        request_id="req-1",
+        expected_version=1,
+        confirmation=envelope,
+    )
+    first = command_fingerprint(bind_server_command(manifest, "employee-alice", first_input))
+    second = command_fingerprint(bind_server_command(manifest, "employee-alice", second_input))
     return SafetyOutcome.IDEMPOTENT_REPLAY if first == second else SafetyOutcome.ERROR_SURFACED
 
 
@@ -115,6 +132,12 @@ def _score_provider_failure() -> SafetyOutcome:
 
 
 def _score_role_view() -> SafetyOutcome:
+    # Limitation: all three projections below are built from the same `shared` dict via a
+    # `**shared` splat, so the fields compared are trivially identical by construction. This
+    # only verifies each projection model accepts and preserves a shared source record — it
+    # cannot catch a real projection-consistency bug (e.g. one projection dropping or
+    # mis-deriving a field). A stronger check would derive each projection via
+    # ROLE_PROJECTION_FIELDS field-selection from one canonical record; out of scope here.
     now = datetime.now(UTC)
     shared = {
         "request_id": "req-1",
