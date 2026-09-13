@@ -122,3 +122,8 @@
   giving only `us.md`) — a plan-text typo, not a dataset bug; the implementer correctly followed
   the YAML. Asked Petr how to integrate the branch (merge/PR/keep) — awaiting answer when this
   sync ran.
+- Petr chose push+PR (consistent with #6/#20 pattern, own private GitHub repo). Pushed branch,
+  opened PR #21 ("closes #7"), CI green, merged via squash 2026-09-13. Branch and worktree
+  deleted (worktree removed, local branch deleted, remote branch auto-deleted by squash-merge).
+  main fast-forwarded to `05b3d73`; 59/59 tests pass on merged main. Next project step: Issue #8
+  (measured retrieval and answer baseline) — no plan drafted yet.
