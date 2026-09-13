@@ -78,19 +78,27 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   state transitions, errors, and consistency tests. PR #20 passed independent QA and was accepted
   and squash-merged as `4d6002e` on 2026-09-13; Issue #6 is complete and `main` is verified (21
   unit tests pass).
-- Issue #7 (micro-eval dataset) has a content-only draft ahead of its schema/validator/scorer:
-  `evals/cases/draft-v0.1-micro-eval.md`, 14 cases across the required categories. Open decision
-  before the versioned schema can be written: whether to add sub-document chunking for real
-  Recall@k or keep whole-document evidence IDs for v0.1.
+- Issue #7 (micro-eval dataset) implementation is complete on branch
+  `worktree-issue-7-micro-eval-dataset` (9 commits ahead of `main`, not yet merged): pydantic
+  discriminated-union case schema, dataset validator, scorer, text reporting, the versioned
+  `evals/cases/v0.1.yaml` (14 cases transcribed from the draft), and a `run.py` CLI wired against
+  the real Issue #6 workflow contracts for 5 of 6 safety/workflow categories (`provider_failure`
+  is a documented placeholder pending Issue #8's LLM adapter). Decided: no sub-document chunking
+  for v0.1, whole-document evidence IDs only (`docs/decisions/0001-v0.1-evidence-granularity.md`).
+  59/59 tests pass, ruff clean. Known limitations parked as backlog (not blocking): one-sided
+  safety checks lack negative controls, a category-name typo produces misleading validation
+  errors, `_REPO_ROOT` path resolution assumes an editable install, `abstain_expected` with
+  non-empty `expected_evidence` is silently accepted, no `make eval` target/README pointer, and
+  the `expects_clarification` field is metadata-only (not yet scored).
 - No product behavior or external integration exists; the frozen corpus is imported and
   validated offline.
 
 ## 7. Next steps
 
-1. Integrate Issue #6 after independent QA and owner acceptance.
-2. Create 10–15 reviewed micro-eval cases in Issue #7 and build the simplest retrieval/answer
-   baseline in Issue #8; select the live model and budget at that gate, then publish the first
-   error table.
+1. Integrate the Issue #7 micro-eval branch after Petr decides merge/PR/keep.
+2. Build the simplest retrieval/answer baseline in Issue #8; select the live model and budget at
+   that gate, then publish the first error table. This also unblocks scoring
+   `provider_failure` and `prompt_injection` against real behavior instead of placeholders.
 3. Test and implement authorization, version-bound confirmation, idempotency, workflow
    transitions, persistence, and the fake-adapter vertical slice.
 4. Integrate the knowledge and workflow paths, then build a server-rendered FastAPI interface
