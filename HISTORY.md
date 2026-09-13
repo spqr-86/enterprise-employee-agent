@@ -175,3 +175,14 @@
   filter (10 vs 8 vs 4), and current OpenRouter model IDs/prices (`openai/gpt-5-mini` accepts no
   `temperature`; expected run cost ≈ $0.08, not ≈ $0.03). Open for the owner: framework §10
   retry/repair vs the spec's no-retry rule, and the execution mode.
+- An external review (gpt-6-astra) of the Issue #8 plan found five gaps, all verified against the
+  plan, spec and framework: the comparison model would show groundedness and task success 0/7
+  for missing reviews; the report checked only committed git changes and never compared recorded
+  hashes; the full provider body (possibly with hidden reasoning) went into the artifact; the
+  JSON Schema was hand-written next to the Python model; and the retry/repair exception lived only
+  in a future report. Owner chose: comparison model reported as `not reviewed` (no extra manual
+  review), and approved all fixes. Plan and spec revised: generated schema, response field
+  allowlist with a reasoning fixture, `source_changed_since` covering uncommitted/untracked
+  changes plus `run_input_mismatches`, and decision 0004 (no retry/repair in the baseline, §10
+  applies from Issue #13). Owner also accepted the ≈ $0.08 run cost and chose subagent-driven
+  execution. Next: execute the plan from Task 0.

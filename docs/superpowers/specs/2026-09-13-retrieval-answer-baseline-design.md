@@ -3,7 +3,7 @@
 Status: draft 2026-09-13, revision 3 (rewritten after three reviews: Codex, gpt-5.6-sol,
 adversarial review — see `2026-09-13-retrieval-answer-baseline-codex-review.md` and
 `2026-09-13-retrieval-answer-baseline-adversarial-review.md`)
-Related: Issue #8, decisions 0001, 0002, 0003, `DEVELOPMENT_FRAMEWORK.md` §9–10,
+Related: Issue #8, decisions 0001, 0002, 0003, 0004, `DEVELOPMENT_FRAMEWORK.md` §9–10,
 `docs/superpowers/specs/2026-09-13-micro-eval-dataset-design.md`, `evals/cases/v0.1.yaml`
 
 ## Goal
@@ -84,7 +84,9 @@ v0.1 is authorization filtering, determinism, and the zero-overlap rule.
 Provider neutrality comes from the interface, not from the HTTP library: business code depends
 on an `AnswerProvider` protocol in `src/enterprise_employee_agent/llm/`; the OpenRouter transport
 is one implementation of it, built on `httpx` (new dependency). No provider SDK is imported by
-business code.
+business code. The JSON Schema sent as the structured-output format is generated from the Python
+contract model, never maintained by hand next to it (`DEVELOPMENT_FRAMEWORK.md`, one
+authoritative contract).
 
 Models: GPT-5 mini is the configured baseline; the decision is made on it. DeepSeek V3.2 runs in
 the same run for comparison and does not affect the decision. Exact model IDs, prompt version,
@@ -106,7 +108,9 @@ the evidence establishes that the case needs HR (unsupported eligibility) — it
 `answered`, not `abstained` (`out-of-scope-texas-detail`).
 
 Contract violations — unparseable JSON, missing required field, citation not in the retrieved
-allowed set — are recorded as raw failures and the case fails. No retry or repair in v0.1.
+allowed set — are recorded as raw failures and the case fails. No retry or repair in v0.1; this
+is a written exception to `DEVELOPMENT_FRAMEWORK.md` §10, recorded before implementation in
+decision 0004.
 
 Mapping to the existing scorer: `abstained=True` iff `status == abstained`; `actual_evidence =
 citations`. `escalated` passes a non-abstain case like `answered`; escalation is not scored as a
@@ -136,6 +140,10 @@ Computed on GPT-5 mini (and reported identically for DeepSeek V3.2):
 - Safety — 7 cases (prompt injection + 6 deterministic), exact outcome.
 - Operating: latency, input/output tokens, cost, per case and total.
 
+Groundedness and task success need a manual review. Only the decision model is reviewed, so for
+DeepSeek V3.2 they are reported as `not reviewed`, never as 0/7. A model with a partial set of
+review verdicts is an error, not a lower score.
+
 Manual review is done by Petr on every knowledge case output of the decision model (8 cases, so
 "every failure and a sample of passes" from Issue #8 becomes "every case"). Verdicts are written
 to the run artifact with the reviewer and date; the report is built from them.
@@ -158,7 +166,8 @@ is judged on Recall@k. A threshold change after results requires a written reaso
 ## Budget
 
 - Approved total for Issue #8 live runs: **$0.50**, cumulative across runs, not per run.
-  Expected cost of one run (18 calls) ≈ $0.03.
+  Expected cost of one run (18 calls) ≈ $0.08 (`us.md` is ≈10k input tokens per call; the
+  earlier ≈ $0.03 estimate was low). Owner accepted on 2026-09-13.
 - Run artifacts record their cost; before starting, the runner sums the costs of existing
   Issue #8 artifacts to get the remaining budget.
 - Pre-call reservation: worst-case cost = input tokens + `max_tokens` × the model's price
@@ -180,8 +189,10 @@ Two separate things, so that CI never depends on paid output:
    `corpus_version`, document-access map version, dataset version, prompt version and hash,
    model IDs and any provider-reported revision, parameters, run ID, and per call: case ID, model,
    request (question/scenario text, retrieved document IDs, model ID, parameters — never API key,
-   auth headers or other transport fields), raw response, parsed contract or violation, usage,
-   cost, latency. It is evidence of what happened, not a test fixture.
+   auth headers or other transport fields), the provider response restricted to an explicit field
+   allowlist (`id`, `model`, `provider`, `created`, `usage`, `finish_reason`, message `content`;
+   reasoning and every other field are dropped, `DEVELOPMENT_FRAMEWORK.md` §10), parsed contract
+   or violation, usage, cost, latency. It is evidence of what happened, not a test fixture.
 2. **Offline fixtures** — small hand-written synthetic responses under `tests/fixtures/llm/`
    (valid `answered`, `abstained`, `escalated`, malformed JSON, citation outside retrieved set,
    timeout, HTTP error). A fake transport serves them. Editing the prompt does not break CI; these
@@ -194,7 +205,8 @@ Two separate things, so that CI never depends on paid output:
 - Document access map: validation of the synthetic fixture's hash/size; unknown document ID
   rejected.
 - Adapter: request shape against fake transport; each contract violation; timeout and HTTP error
-  → typed error; API key absent from the recorded request.
+  → typed error; API key absent from the recorded request; a response carrying `reasoning` is
+  recorded without it; the sent JSON Schema equals the one generated from the contract model.
 - Runner: status → scorer mapping; prompt-injection mapping; budget reservation refuses a call;
   missing cost books reservation; cumulative budget read from existing artifacts; abort marks run
   `incomplete`.
@@ -203,6 +215,10 @@ Two separate things, so that CI never depends on paid output:
   written to the contract, not recorded from a provider), so the offline run exercises the whole
   pipeline and exits 0; it changes when cases or the contract change, not when the prompt does.
   No network in CI.
+- Report: comparison model without reviews shows `not reviewed`; partial reviews are rejected;
+  the report refuses to build when `src/`, `data/` or `evals/cases/` differ from the run revision
+  (committed or uncommitted) or when the dataset hash, prompt version/hash, access-map version or
+  corpus version differ from the artifact.
 - Live: one approved run, 18 calls, artifact committed, manual review, report.
 
 ## Known limitations (v0.1)
@@ -219,4 +235,4 @@ Two separate things, so that CI never depends on paid output:
 Per Issue #8: Recall@1 (with control), groundedness, abstention, task success, safety outcomes,
 latency, tokens, cost — counts and percentages — plus the raw failure table and review verdicts,
 for GPT-5 mini and DeepSeek V3.2. Ends with the verdict from the decision rule and one concrete
-next action.
+next action. The report is built only from inputs that match the artifact (see Testing).

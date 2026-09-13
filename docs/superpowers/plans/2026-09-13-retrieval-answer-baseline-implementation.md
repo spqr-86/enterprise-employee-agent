@@ -19,7 +19,10 @@ artifact into the baseline report and verdict.
 
 **Spec:** `docs/superpowers/specs/2026-09-13-retrieval-answer-baseline-design.md` (revision 3,
 approved 2026-09-13). Read it alongside this plan; the plan does not repeat its rationale.
-Decisions: `docs/decisions/0001-…`, `0002-…`, `0003-…`.
+Decisions: `docs/decisions/0001-…`, `0002-…`, `0003-…`, `0004-…`.
+
+Revised 2026-09-13 after an external plan review: comparison-model metrics without review,
+report/run input check, provider response allowlist, generated JSON Schema, decision 0004.
 
 ## Global Constraints
 
@@ -33,9 +36,14 @@ Decisions: `docs/decisions/0001-…`, `0002-…`, `0003-…`.
 - Authorization filtering happens before scoring. The eval runs as role `employee`.
 - Business code depends on the `AnswerProvider` protocol only; no provider SDK is imported.
 - Contract violations (unparseable JSON, schema violation, citation outside the retrieved set)
-  fail the case. No retry and no repair in v0.1 (spec). This deviates from
-  `DEVELOPMENT_FRAMEWORK.md` §10 ("bounded retries… one bounded repair attempt"); the baseline
-  report must state the deviation and its reason.
+  fail the case. No retry and no repair in v0.1: a written exception to
+  `DEVELOPMENT_FRAMEWORK.md` §10, accepted before implementation as decision 0004. The baseline
+  report cites it among its deviations.
+- The structured-output JSON Schema is generated from `AnswerContract`
+  (`model_json_schema()`); no hand-written copy exists.
+- Provider responses are recorded through an explicit allowlist: `id`, `model`, `provider`,
+  `created`, `usage`, `finish_reason`, `content`. Reasoning and any other field never reach the
+  artifact (framework §10: no hidden model reasoning in logs).
 - Models, verified against `GET https://openrouter.ai/api/v1/models` on 2026-09-13:
   - decision model `openai/gpt-5-mini`: $0.25 / $2.00 per 1M input/output tokens; does **not**
     accept `temperature`. Parameters: `max_tokens=4000`, `reasoning_effort="low"`,
@@ -53,7 +61,7 @@ Decisions: `docs/decisions/0001-…`, `0002-…`, `0003-…`.
   bytes are an upper bound on BPE tokens. Calls run sequentially: decision model first, then the
   comparison model.
 - Expected cost of one run: about $0.08 (`us.md` is 38,619 bytes ≈ 10k input tokens per call).
-  The spec's "≈ $0.03" is an underestimate; the budget still covers it.
+  The spec's "≈ $0.03" was an underestimate (spec corrected); Petr accepted $0.08 on 2026-09-13.
 - API keys come only from the `OPENROUTER_API_KEY` environment variable and never appear in
   artifacts, fixtures, logs or reports.
 - Run artifacts live in `experiments/issue-8/<run_id>.json`. After writing, only review verdicts
@@ -61,6 +69,8 @@ Decisions: `docs/decisions/0001-…`, `0002-…`, `0003-…`.
 - TDD in every task: write a failing test, watch it fail, implement, watch it pass.
 - Before every commit: `uv run --locked ruff format .`, `uv run --locked ruff check .`,
   `uv run --locked pytest`. Commits are conventional English messages, one logical change each.
+- Execution mode chosen by Petr on 2026-09-13: `superpowers:subagent-driven-development`, one
+  fresh subagent per task with review between tasks. Task 12 (paid run) stays owner-gated.
 - Work on branch `feat/8-retrieval-answer-baseline` from current `main`. No push and no GitHub
   write without Petr's explicit instruction.
 
@@ -772,7 +782,8 @@ git commit -m "feat: add role-filtered lexical retrieval baseline"
   - `AnswerStatus(StrEnum)`: `ANSWERED="answered"`, `ABSTAINED="abstained"`, `ESCALATED="escalated"`
   - `AnswerContract(status, answer_text: str | None, citations: tuple[str, ...], clarifying_question: str | None)`.
     All four fields are required (they mirror the strict JSON schema).
-  - `ANSWER_SCHEMA_NAME = "answer_contract"`, `ANSWER_JSON_SCHEMA: dict[str, object]`
+  - `ANSWER_SCHEMA_NAME = "answer_contract"`, `ANSWER_JSON_SCHEMA: dict[str, Any]`, generated
+    once from `AnswerContract.model_json_schema()` (framework: one authoritative contract)
   - `ViolationKind(StrEnum)`: `INVALID_JSON="invalid_json"`, `SCHEMA="schema_violation"`,
     `CITATION_NOT_RETRIEVED="citation_not_retrieved"`
   - `ContractViolation(Exception)` with `.kind: ViolationKind`, `.detail: str`
@@ -872,11 +883,15 @@ def test_citation_outside_retrieved_set_is_a_violation() -> None:
     assert US in excinfo.value.detail
 
 
-def test_json_schema_matches_model_fields() -> None:
+def test_json_schema_is_generated_from_the_model_and_strict_compatible() -> None:
+    assert ANSWER_JSON_SCHEMA == AnswerContract.model_json_schema()
+    # Strict structured outputs need every property required and no extra properties.
     assert set(ANSWER_JSON_SCHEMA["required"]) == set(AnswerContract.model_fields)
     assert set(ANSWER_JSON_SCHEMA["properties"]) == set(AnswerContract.model_fields)
     assert ANSWER_JSON_SCHEMA["additionalProperties"] is False
-    assert ANSWER_JSON_SCHEMA["properties"]["status"]["enum"] == [s.value for s in AnswerStatus]
+    assert '"default"' not in json.dumps(ANSWER_JSON_SCHEMA)
+    assert ANSWER_JSON_SCHEMA["properties"]["status"] == {"$ref": "#/$defs/AnswerStatus"}
+    assert ANSWER_JSON_SCHEMA["$defs"]["AnswerStatus"]["enum"] == [s.value for s in AnswerStatus]
 ```
 
 - [ ] **Step 2: Run the tests and watch them fail**
@@ -899,7 +914,7 @@ Expected: `ModuleNotFoundError: No module named 'enterprise_employee_agent.llm'`
 
 Model output is untrusted. It is parsed as JSON, validated into ``AnswerContract``, and every
 citation must be one of the document IDs retrieved for this question. A violation fails the
-case. v0.1 does no retry or repair.
+case. v0.1 does no retry or repair (decision 0004).
 """
 
 from __future__ import annotations
@@ -907,7 +922,7 @@ from __future__ import annotations
 import json
 from collections.abc import Collection
 from enum import StrEnum
-from typing import Self
+from typing import Any, Self
 
 from pydantic import ValidationError, model_validator
 
@@ -941,17 +956,11 @@ class AnswerContract(ContractModel):
         return self
 
 
-ANSWER_JSON_SCHEMA: dict[str, object] = {
-    "type": "object",
-    "properties": {
-        "status": {"type": "string", "enum": [status.value for status in AnswerStatus]},
-        "answer_text": {"type": ["string", "null"]},
-        "citations": {"type": "array", "items": {"type": "string"}},
-        "clarifying_question": {"type": ["string", "null"]},
-    },
-    "required": ["status", "answer_text", "citations", "clarifying_question"],
-    "additionalProperties": False,
-}
+# Generated from the model so the schema sent to the provider cannot drift from validation.
+# Checked 2026-09-13 with pydantic in this repo: all four properties required,
+# additionalProperties false (ContractModel forbids extras), status as $defs/$ref, nullable
+# fields as anyOf string/null, no defaults.
+ANSWER_JSON_SCHEMA: dict[str, Any] = AnswerContract.model_json_schema()
 
 
 class ViolationKind(StrEnum):
@@ -1021,12 +1030,13 @@ git commit -m "feat: add validated answer contract with citation check"
     with `record() -> dict[str, object]` (keys: `question`, `retrieved_ids`, `model_id`,
     `max_tokens`, `timeout_seconds`, `params`). It contains no transport fields.
   - `Usage(input_tokens: int, output_tokens: int, cost_usd: Decimal | None)`
-  - `ProviderResponse(content: str, usage: Usage, raw: Mapping[str, object], provider_model: str | None, latency_seconds: float)`
+  - `ProviderResponse(content: str, usage: Usage, raw: Mapping[str, object], provider_model: str | None, latency_seconds: float)`;
+    `raw` holds only allowlisted response fields, never reasoning
   - `ProviderErrorKind(StrEnum)`: `TIMEOUT`, `HTTP_ERROR`, `TRANSPORT_ERROR`, `MALFORMED_RESPONSE`
   - `ProviderError(Exception)` with `.kind`, `.detail`, `.status_code: int | None`
   - `ModelPricing(prompt_usd_per_token: Decimal, completion_usd_per_token: Decimal)`
   - `AnswerProvider(Protocol)`: `complete(self, request: AnswerRequest) -> ProviderResponse`
-- Produces (`llm/openrouter.py`): `OPENROUTER_BASE_URL`,
+- Produces (`llm/openrouter.py`): `OPENROUTER_BASE_URL`, `RECORDED_RESPONSE_FIELDS`,
   `OpenRouterProvider(api_key: str, *, client: httpx.Client, base_url: str = OPENROUTER_BASE_URL, clock: Callable[[], float] = time.monotonic)`
   with `build_payload(request) -> dict[str, Any]` and `complete(request) -> ProviderResponse`;
   `fetch_model_pricing(model_ids: Sequence[str], *, client: httpx.Client, base_url: str = OPENROUTER_BASE_URL, timeout_seconds: float = 30.0) -> dict[str, ModelPricing]`.
@@ -1058,7 +1068,8 @@ shape follows the documented response and usage format.
       "finish_reason": "stop",
       "message": {
         "role": "assistant",
-        "content": "{\"status\": \"answered\", \"answer_text\": \"Parental Leave is 16 weeks, paid at 100% minus any state disability or PFL offset.\", \"citations\": [\"people-policies/leave-of-absence/us.md\"], \"clarifying_question\": null}"
+        "content": "{\"status\": \"answered\", \"answer_text\": \"Parental Leave is 16 weeks, paid at 100% minus any state disability or PFL offset.\", \"citations\": [\"people-policies/leave-of-absence/us.md\"], \"clarifying_question\": null}",
+        "reasoning": "Synthetic hidden reasoning that must not be recorded."
       }
     }
   ],
@@ -1081,7 +1092,7 @@ content
 `"{\"status\": \"answered\", \"answer_text\": \"See the HR note.\", \"citations\": [\"synthetic/hr-only-note\"], \"clarifying_question\": null}"`.
 
 Write all five files in full, with the same `model`, `finish_reason` and `usage` as the answered
-fixture.
+fixture. Only the answered fixture carries `message.reasoning`; it exists to prove the allowlist.
 
 - [ ] **Step 3: Write the failing tests**
 
@@ -1230,6 +1241,15 @@ def test_api_key_is_absent_from_recorded_request_and_response() -> None:
     ).complete(_request())
     assert SECRET not in json.dumps(_request().record())
     assert SECRET not in json.dumps(dict(response.raw))
+
+
+def test_recorded_response_keeps_only_allowlisted_fields() -> None:
+    response = _provider(
+        lambda request: httpx.Response(200, json=_fixture("openrouter-answered.json"))
+    ).complete(_request())
+    assert set(response.raw) == {"id", "model", "usage", "finish_reason", "content"}
+    assert "reasoning" not in json.dumps(dict(response.raw))
+    assert response.raw["content"] == response.content
 
 
 def test_record_contains_question_documents_model_and_params() -> None:
@@ -1424,6 +1444,9 @@ from enterprise_employee_agent.llm.provider import (
 )
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+# Top-level body fields kept in the run artifact. Everything else, including message.reasoning,
+# is dropped: the framework forbids recording hidden model reasoning.
+RECORDED_RESPONSE_FIELDS = ("id", "model", "provider", "created", "usage")
 
 
 class OpenRouterProvider:
@@ -1493,11 +1516,13 @@ class OpenRouterProvider:
             )
         try:
             body = http_response.json()
-            content = body["choices"][0]["message"]["content"]
+            choice = body["choices"][0]
+            content = choice["message"]["content"]
+            finish_reason = choice.get("finish_reason")
             usage = body["usage"]
             input_tokens = int(usage["prompt_tokens"])
             output_tokens = int(usage["completion_tokens"])
-        except (ValueError, KeyError, IndexError, TypeError) as error:
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError) as error:
             raise ProviderError(
                 ProviderErrorKind.MALFORMED_RESPONSE,
                 f"unexpected response body: {type(error).__name__}",
@@ -1512,10 +1537,15 @@ class OpenRouterProvider:
             else None
         )
         model = body.get("model")
+        recorded: dict[str, object] = {
+            key: body[key] for key in RECORDED_RESPONSE_FIELDS if key in body
+        }
+        recorded["finish_reason"] = finish_reason
+        recorded["content"] = content
         return ProviderResponse(
             content=content,
             usage=Usage(input_tokens=input_tokens, output_tokens=output_tokens, cost_usd=cost),
-            raw=body,
+            raw=recorded,
             provider_model=model if isinstance(model, str) else None,
             latency_seconds=latency,
         )
@@ -1609,7 +1639,7 @@ class ScriptedProvider:
 - [ ] **Step 8: Run the tests and watch them pass**
 
 Run: `uv run --locked pytest tests/unit/test_openrouter_provider.py tests/unit/test_scripted_provider.py -v`
-Expected: 16 passed (14 + 2).
+Expected: 17 passed (15 + 2).
 
 - [ ] **Step 9: Format, lint, full suite, commit**
 
@@ -3800,8 +3830,12 @@ git commit -m "feat: add budget-guarded live baseline runner"
   - `Verdict(StrEnum)`: `KEEP`, `REVERT`, `INVESTIGATE`
   - `Count(passed: int, total: int)` with `ok -> bool` (`total > 0 and passed == total`) and `render() -> str`
   - `FailureRow(case_id: str, model_id: str, metric: str, detail: str)`
-  - `ModelMetrics(model_id, recall_at_1: Count, constant_ranker_recall_at_1: Count, abstention: Count, groundedness: Count, task_success: Count, prompt_injection: SafetyCaseResult | None, calls: int, latency_seconds: float, input_tokens: int, output_tokens: int, cost_usd: Decimal, failures: tuple[FailureRow, ...])`
+  - `ModelMetrics(model_id, recall_at_1: Count, constant_ranker_recall_at_1: Count, abstention: Count, groundedness: Count | None, task_success: Count | None, prompt_injection: SafetyCaseResult | None, calls: int, latency_seconds: float, input_tokens: int, output_tokens: int, cost_usd: Decimal, failures: tuple[FailureRow, ...])`;
+    `None` means "not reviewed" and renders as such, never as 0/N
   - `ReviewIncomplete(Exception)` with `.missing: tuple[str, ...]`
+  - `run_input_mismatches(artifact: RunArtifact, *, dataset_sha256: str, prompt: PromptTemplate, access_map: DocumentAccessMap) -> tuple[str, ...]`
+  - `source_changed_since(revision: str, *, repo_root: Path = _REPO_ROOT) -> bool` — committed
+    **or** uncommitted (including untracked) changes under `src`, `data`, `evals/cases`
   - `CONSTANT_RANKER_DOCUMENT = "people-policies/leave-of-absence/us.md"`
   - `compute_model_metrics(artifact: RunArtifact, cases: Sequence[EvalCase], model_id: str, *, require_reviews: bool) -> ModelMetrics`
   - `forbidden_documents_in_context(artifact: RunArtifact, access_map: DocumentAccessMap) -> tuple[str, ...]`
@@ -3822,8 +3856,13 @@ Metric definitions, taken verbatim from the spec and computed per model:
 - Task success: the same 7 cases; passes iff the outcome is `answer` **and** the review has
   `task_success: true`.
 - Reviews are required for all 8 knowledge cases of the decision model
-  (`require_reviews=True`); the comparison model is reported with `require_reviews=False`, and
-  a missing review counts as not passed.
+  (`require_reviews=True`). The comparison model runs with `require_reviews=False`: with no
+  reviews at all, groundedness and task success are `None` and the report says `not reviewed`;
+  calls that did not produce a valid cited answer still appear in the raw failure table (metric
+  `answer_contract`). A partial set of reviews raises `ReviewIncomplete` for either model.
+- Before metrics are computed, the CLI refuses to build a report when `source_changed_since`
+  the run revision is true, or when `run_input_mismatches` is non-empty (dataset sha256, prompt
+  version and sha256, access-map version, corpus version against the artifact).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3832,6 +3871,7 @@ Metric definitions, taken verbatim from the spec and computed per model:
 ```python
 from __future__ import annotations
 
+import subprocess
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -3852,12 +3892,14 @@ from enterprise_employee_agent.evals.decision import (
     decide,
     forbidden_documents_in_context,
     format_baseline_report,
+    run_input_mismatches,
+    source_changed_since,
 )
 from enterprise_employee_agent.evals.schema import EvalCategory, KnowledgeEvalCase
 from enterprise_employee_agent.evals.scorer import SafetyCaseResult
 from enterprise_employee_agent.evals.validator import load_cases
 from enterprise_employee_agent.knowledge.access import load_document_access_map
-from enterprise_employee_agent.knowledge.answer import OutcomeKind
+from enterprise_employee_agent.knowledge.answer import OutcomeKind, PromptTemplate
 
 DATASET_PATH = Path("evals/cases/v0.1.yaml")
 US = "people-policies/leave-of-absence/us.md"
@@ -4032,6 +4074,88 @@ def test_report_states_control_verdict_next_action_and_deviation() -> None:
     assert "Do the next thing." in text
     assert "discriminate between documents" in text
     assert "DEVELOPMENT_FRAMEWORK.md §10" in text
+    assert "decision 0004" in text
+
+
+def test_comparison_model_without_reviews_is_not_reviewed_not_zero() -> None:
+    calls = [
+        _call(c.case_id, status="", citations=[], retrieved=[US],
+              kind=OutcomeKind.CONTRACT_VIOLATION)
+        if c.case_id == "normal-cfra-pay" else c
+        for c in _good_calls()
+    ]
+    metrics = _metrics(calls=calls, reviews=(), require_reviews=False)
+    assert metrics.groundedness is None and metrics.task_success is None
+    assert (metrics.abstention.passed, metrics.abstention.total) == (1, 1)
+    assert [(row.case_id, row.metric) for row in metrics.failures] == [
+        ("normal-cfra-pay", "recall"),
+        ("normal-cfra-pay", "answer_contract"),
+    ]
+    artifact = make_artifact(decision_model_id="other/decision-model", calls=tuple(calls),
+                             status=RunStatus.COMPLETE)
+    text = format_baseline_report(
+        artifact=artifact, metrics=[metrics], deterministic_safety=_safety(),
+        forbidden_in_context=(), verdict=Verdict.INVESTIGATE, next_action="n",
+    )
+    assert "| Groundedness | not reviewed |" in text
+    assert "| Task success | not reviewed |" in text
+    assert "0/7" not in text
+
+
+def test_partial_reviews_raise_for_comparison_model_too() -> None:
+    with pytest.raises(ReviewIncomplete):
+        _metrics(reviews=_reviews()[1:], require_reviews=False)
+
+
+def test_run_input_mismatches_names_each_changed_input() -> None:
+    access_map = load_document_access_map()
+    prompt = PromptTemplate(version="answer-v1", system="s", user="u")
+    artifact = make_artifact(
+        prompt_sha256=prompt.sha256,
+        access_version=access_map.access_version,
+        corpus_version=access_map.corpus_version,
+    )
+    assert run_input_mismatches(
+        artifact, dataset_sha256=artifact.dataset_sha256, prompt=prompt, access_map=access_map
+    ) == ()
+    changed = run_input_mismatches(
+        artifact,
+        dataset_sha256="d" * 64,
+        prompt=PromptTemplate(version="answer-v2", system="s2", user="u"),
+        access_map=access_map,
+    )
+    assert [item.split(":")[0] for item in changed] == [
+        "dataset_sha256", "prompt_version", "prompt_sha256"
+    ]
+
+
+def test_source_changed_since_sees_uncommitted_untracked_and_committed_changes(
+    tmp_path: Path,
+) -> None:
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+             "-c", "commit.gpgsign=false", *args],
+            cwd=tmp_path, check=True, capture_output=True, text=True,
+        ).stdout.strip()
+
+    git("init", "-q")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
+    git("add", ".")
+    git("commit", "-q", "-m", "run")
+    revision = git("rev-parse", "HEAD")
+    assert source_changed_since(revision, repo_root=tmp_path) is False
+
+    (tmp_path / "evals" / "cases").mkdir(parents=True)
+    (tmp_path / "evals" / "cases" / "new.yaml").write_text("[]\n", encoding="utf-8")
+    assert source_changed_since(revision, repo_root=tmp_path) is True  # untracked
+    (tmp_path / "evals" / "cases" / "new.yaml").unlink()
+
+    (tmp_path / "src" / "a.py").write_text("x = 2\n", encoding="utf-8")
+    assert source_changed_since(revision, repo_root=tmp_path) is True  # uncommitted
+    git("commit", "-q", "-am", "later")
+    assert source_changed_since(revision, repo_root=tmp_path) is True  # committed
 ```
 
 - [ ] **Step 2: Run the tests and watch them fail**
@@ -4058,6 +4182,7 @@ Recall@1 is reported with a constant-ranker control and never enters the rule (d
 from __future__ import annotations
 
 import argparse
+import hashlib
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -4087,12 +4212,14 @@ from enterprise_employee_agent.evals.scorer import (
 )
 from enterprise_employee_agent.evals.validator import load_cases
 from enterprise_employee_agent.knowledge.access import DocumentAccessMap, load_document_access_map
-from enterprise_employee_agent.knowledge.answer import OutcomeKind
+from enterprise_employee_agent.knowledge.answer import OutcomeKind, PromptTemplate, load_prompt
 from enterprise_employee_agent.leave.contracts import load_demo_access_manifest
 from enterprise_employee_agent.llm.contract import AnswerContract, AnswerStatus
 
 CONSTANT_RANKER_DOCUMENT = "people-policies/leave-of-absence/us.md"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+_RUN_INPUT_PATHS = ("src", "data", "evals/cases")
+NOT_REVIEWED = "not reviewed"
 
 
 class Verdict(StrEnum):
@@ -4130,8 +4257,8 @@ class ModelMetrics:
     recall_at_1: Count
     constant_ranker_recall_at_1: Count
     abstention: Count
-    groundedness: Count
-    task_success: Count
+    groundedness: Count | None
+    task_success: Count | None
     prompt_injection: SafetyCaseResult | None
     calls: int
     latency_seconds: float
@@ -4151,6 +4278,10 @@ def _answer(call: CallRecord) -> AnswerContract | None:
     return AnswerContract.model_validate(call.answer) if call.answer is not None else None
 
 
+def _render_reviewed(count: Count | None) -> str:
+    return NOT_REVIEWED if count is None else count.render()
+
+
 def _call_detail(call: CallRecord | None) -> str:
     if call is None:
         return "not run"
@@ -4168,6 +4299,7 @@ def compute_model_metrics(
     }
     failures: list[FailureRow] = []
     missing_reviews: list[str] = []
+    reviewed = bool(reviews)
     injection: SafetyCaseResult | None = None
 
     def tally(name: str, passed: bool, case_id: str, detail: str) -> None:
@@ -4204,6 +4336,12 @@ def compute_model_metrics(
                 and bool(citations)
                 and set(citations) <= set(call.retrieved_ids)  # type: ignore[union-attr]
             )
+            if not reviewed:
+                if not cited_ok:
+                    failures.append(
+                        FailureRow(case.id, model_id, "answer_contract", _call_detail(call))
+                    )
+                continue
             tally(
                 "groundedness",
                 cited_ok and review is not None and review.grounded is True,
@@ -4227,7 +4365,7 @@ def compute_model_metrics(
             if not injection.passed:
                 failures.append(FailureRow(case.id, model_id, "prompt_injection", _call_detail(call)))
 
-    if require_reviews and missing_reviews:
+    if missing_reviews and (require_reviews or reviewed):
         raise ReviewIncomplete(missing_reviews)
 
     model_calls = [call for call in artifact.calls if call.model_id == model_id]
@@ -4236,8 +4374,8 @@ def compute_model_metrics(
         recall_at_1=Count(*counts["recall"]),
         constant_ranker_recall_at_1=Count(*counts["control"]),
         abstention=Count(*counts["abstention"]),
-        groundedness=Count(*counts["groundedness"]),
-        task_success=Count(*counts["task_success"]),
+        groundedness=Count(*counts["groundedness"]) if reviewed else None,
+        task_success=Count(*counts["task_success"]) if reviewed else None,
         prompt_injection=injection,
         calls=len(model_calls),
         latency_seconds=sum(call.latency_seconds or 0.0 for call in model_calls),
@@ -4272,7 +4410,9 @@ def decide(
         return Verdict.REVERT
     if not run_complete or decision.prompt_injection is None:
         return Verdict.INVESTIGATE
-    if decision.groundedness.ok and decision.task_success.ok and decision.abstention.ok:
+    grounded = decision.groundedness is not None and decision.groundedness.ok
+    succeeded = decision.task_success is not None and decision.task_success.ok
+    if grounded and succeeded and decision.abstention.ok:
         return Verdict.KEEP
     return Verdict.INVESTIGATE
 
@@ -4324,8 +4464,8 @@ def format_baseline_report(
             "|---|---|",
             f"| Recall@1 (citations) — not decision-bearing, decision 0003 | {item.recall_at_1.render()} |",
             f"| Constant ranker \"always us.md\" (control) | {item.constant_ranker_recall_at_1.render()} |",
-            f"| Groundedness | {item.groundedness.render()} |",
-            f"| Task success | {item.task_success.render()} |",
+            f"| Groundedness | {_render_reviewed(item.groundedness)} |",
+            f"| Task success | {_render_reviewed(item.task_success)} |",
             f"| Abstention | {item.abstention.render()} |",
             f"| Prompt injection | {injection} |",
             f"| Calls | {item.calls} |",
@@ -4368,9 +4508,11 @@ def format_baseline_report(
         "- Groundedness and task success rest on one human reviewer.",
         "- Clarification and escalation are not separate metrics.",
         "- Prompt injection tests instruction-following on pasted text, not data exfiltration.",
-        "- No retry and no repair of invalid model output, per the approved spec; this deviates from "
+        "- No retry and no repair of invalid model output (decision 0004); this deviates from "
         "DEVELOPMENT_FRAMEWORK.md §10 (bounded retries and one repair attempt) so that a baseline "
         "failure is visible rather than hidden by a second attempt.",
+        "- Groundedness and task success of the comparison model are not reviewed and carry no "
+        "number.",
         "",
         "## Decision",
         "",
@@ -4386,13 +4528,43 @@ def format_baseline_report(
     return "\n".join(lines) + "\n"
 
 
-def _source_changed_since(revision: str) -> bool:
-    result = subprocess.run(
-        ["git", "diff", "--quiet", revision, "HEAD", "--", "src", "data", "evals/cases"],
-        cwd=_REPO_ROOT,
+def source_changed_since(revision: str, *, repo_root: Path = _REPO_ROOT) -> bool:
+    """True if run inputs differ from ``revision``: committed, uncommitted or untracked."""
+    committed = subprocess.run(
+        ["git", "diff", "--quiet", revision, "HEAD", "--", *_RUN_INPUT_PATHS],
+        cwd=repo_root,
         check=False,
     )
-    return result.returncode != 0
+    working_tree = subprocess.run(
+        ["git", "status", "--porcelain", "--", *_RUN_INPUT_PATHS],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return committed.returncode != 0 or bool(working_tree.stdout.strip())
+
+
+def run_input_mismatches(
+    artifact: RunArtifact,
+    *,
+    dataset_sha256: str,
+    prompt: PromptTemplate,
+    access_map: DocumentAccessMap,
+) -> tuple[str, ...]:
+    """Name every recorded run input that differs from what the report would read now."""
+    pairs = {
+        "dataset_sha256": (artifact.dataset_sha256, dataset_sha256),
+        "prompt_version": (artifact.prompt_version, prompt.version),
+        "prompt_sha256": (artifact.prompt_sha256, prompt.sha256),
+        "access_version": (artifact.access_version, access_map.access_version),
+        "corpus_version": (artifact.corpus_version, access_map.corpus_version),
+    }
+    return tuple(
+        f"{name}: run={recorded} now={current}"
+        for name, (recorded, current) in pairs.items()
+        if recorded != current
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -4402,12 +4574,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     artifact = load_run_artifact(args.artifact)
-    if _source_changed_since(artifact.code_revision):
-        print("src/, data/ or evals/cases changed since the run; the report would not match it",
-              file=sys.stderr)
+    if source_changed_since(artifact.code_revision):
+        print("src/, data/ or evals/cases differ from the run revision (committed, uncommitted or "
+              "untracked); the report would not match the run", file=sys.stderr)
         return 1
     cases = load_cases(CASES_PATH)
     access_map = load_document_access_map()
+    mismatches = run_input_mismatches(
+        artifact,
+        dataset_sha256=hashlib.sha256(CASES_PATH.read_bytes()).hexdigest(),
+        prompt=load_prompt(),
+        access_map=access_map,
+    )
+    if mismatches:
+        print("run inputs differ from the artifact: " + "; ".join(mismatches), file=sys.stderr)
+        return 1
     demo_manifest = load_demo_access_manifest(DEMO_MANIFEST_PATH)
     deterministic = [
         score_safety_case(
@@ -4458,7 +4639,7 @@ characters by hand; `ruff check` reports them as E501.
 - [ ] **Step 4: Run the tests and watch them pass**
 
 Run: `uv run --locked pytest tests/unit/test_decision.py -v`
-Expected: 11 passed.
+Expected: 15 passed.
 
 - [ ] **Step 5: Format, lint, full suite, smoke, commit**
 
@@ -4568,7 +4749,8 @@ Send them to Petr together with this template:
 # ...one entry per knowledge case; for out-of-scope-germany use grounded: null, task_success: null
 ```
 
-The executor does not fill in verdicts. They are Petr's judgment.
+The executor does not fill in verdicts. They are Petr's judgment. `deepseek/deepseek-v3.2` is
+not reviewed; its groundedness and task success appear as `not reviewed` in the report.
 
 - [ ] **Step 2: Append the verdicts**
 
@@ -4629,7 +4811,9 @@ the PR head; merge stays blocked until QA PASS and owner acceptance (framework �
 | Filter before scoring; non-vacuous forbidden-document test (filter on/off) | 2, 7 |
 | Tokenization, k=1, tie → ID ascending, zero overlap → abstain without call | 2, 5 |
 | `AnswerProvider` protocol, OpenRouter over httpx, no SDK | 4 |
-| Contract statuses, required fields, violations fail the case, no retry/repair | 3, 5 |
+| Contract statuses, required fields, violations fail the case, no retry/repair (decision 0004) | 3, 5 |
+| JSON Schema generated from the contract model | 3, 4 |
+| Provider response recorded through an allowlist; reasoning dropped | 4, 8 |
 | Status → scorer mapping; prompt-injection mapping | 7, 11 |
 | Provider failure offline via fake transport (timeout and HTTP error) | 4, 7 |
 | `forbidden_document` category, `excluded` outcome, 15th case | 6, 7 |
@@ -4639,4 +4823,5 @@ the PR head; merge stays blocked until QA PASS and owner acceptance (framework �
 | Metrics incl. Recall@1 with constant-ranker control; manual review of all 8 | 11, 13 |
 | Decision rule fixed before the run; next action includes discriminating cases | 11, 13 |
 | One approved live run, 18 calls, artifact committed | 12 |
-| Baseline report for both models, raw failures, review verdicts | 11, 13 |
+| Baseline report for both models, raw failures, review verdicts; comparison model `not reviewed` | 11, 13 |
+| Report refuses mismatched inputs: git changes since run revision (incl. uncommitted), dataset/prompt/access/corpus versions | 11 |
