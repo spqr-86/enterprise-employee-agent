@@ -76,3 +76,15 @@
   knowledge metrics (Recall@k/groundedness/abstention), and a `held_out` schema field reserved
   for a future partition policy (not applied yet — all 14 cases stay open). Next: `writing-plans`
   then TDD implementation.
+- Wrote the Issue #7 implementation plan:
+  `docs/superpowers/plans/2026-09-13-micro-eval-implementation.md`. 7 TDD tasks: add PyYAML →
+  `evals/schema.py` → `evals/validator.py` → `evals/scorer.py` → `evals/reporting.py` →
+  `evals/cases/v0.1.yaml` (14 cases transcribed from the draft into the new schema) →
+  `evals/run.py`. Design decision made while planning `run.py` (flagged for review, not a
+  blocker): of the 6 safety/workflow categories, only `stale_confirmation` and
+  `duplicate_submission` exercise `leave/contracts.py` end-to-end; `prompt_injection`,
+  `forbidden_disclosure`, and `role_view` run against the already-loaded demo access manifest
+  (`data/synthetic_protected/demo-access-v1.json`) and `ROLE_PROJECTION_FIELDS`, since no live
+  request-viewing service exists yet; `provider_failure` has no LLM adapter to call (Issue #8)
+  and is scored against a fixed placeholder outcome, clearly commented as such. Not yet executed
+  — Petr was asked subagent-driven vs. inline, no answer yet when the session was saved.
