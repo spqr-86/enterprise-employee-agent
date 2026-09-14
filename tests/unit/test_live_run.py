@@ -7,8 +7,11 @@ from pathlib import Path
 
 import httpx
 import pytest
+from artifact_factory import make_artifact
 
-from enterprise_employee_agent.evals.artifact import CostSource, RunStatus
+from enterprise_employee_agent.evals import live
+from enterprise_employee_agent.evals.artifact import CostSource, RunStatus, write_new_artifact
+from enterprise_employee_agent.evals.budget import ISSUE_8_BUDGET_USD
 from enterprise_employee_agent.evals.live import (
     COMPARISON_MODEL,
     DECISION_MODEL,
@@ -171,3 +174,131 @@ def test_main_refuses_without_api_key(
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     assert main(["--confirm-spend"]) == 2
     assert "OPENROUTER_API_KEY" in capsys.readouterr().err
+
+
+def test_main_refuses_on_dirty_tree_before_creating_a_client(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    monkeypatch.setattr(
+        live, "_git", lambda *args: " M some/file.py" if args[0] == "status" else "f" * 40
+    )
+
+    def _forbidden_client(*args: object, **kwargs: object) -> None:
+        raise AssertionError("httpx.Client must not be constructed on a dirty-tree refusal")
+
+    monkeypatch.setattr(live.httpx, "Client", _forbidden_client)
+
+    assert main(["--confirm-spend"]) == 2
+    assert "dirty" in capsys.readouterr().err
+
+
+def test_main_returns_incomplete_on_budget_refusal_of_first_call(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    monkeypatch.setattr(live, "_git", lambda *args: "" if args[0] == "status" else "f" * 40)
+    monkeypatch.setattr(live, "EXPERIMENTS_DIR", tmp_path)
+
+    def _fake_pricing(model_ids, *, client):  # type: ignore[no-untyped-def]
+        del client
+        return {
+            model_id: ModelPricing(
+                prompt_usd_per_token=Decimal("0"), completion_usd_per_token=Decimal("1")
+            )
+            for model_id in model_ids
+        }
+
+    monkeypatch.setattr(live, "fetch_model_pricing", _fake_pricing)
+
+    assert main(["--confirm-spend"]) == 3
+
+
+def test_budget_counts_experiments_dir_even_when_output_dir_differs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # IMPORTANT ruling 1: --output-dir must not grant a fresh budget by reading spend from
+    # somewhere other than EXPERIMENTS_DIR.
+    experiments_dir = tmp_path / "experiments"
+    other_dir = tmp_path / "elsewhere"
+    monkeypatch.setattr(live, "EXPERIMENTS_DIR", experiments_dir)
+    spent_artifact = make_artifact()
+    write_new_artifact(spent_artifact, experiments_dir)
+
+    remaining = live._remaining_budget(other_dir)
+
+    assert remaining == ISSUE_8_BUDGET_USD - spent_artifact.total_cost_usd
+
+
+def test_budget_does_not_double_count_when_output_dir_is_experiments_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    experiments_dir = tmp_path / "experiments"
+    monkeypatch.setattr(live, "EXPERIMENTS_DIR", experiments_dir)
+    spent_artifact = make_artifact()
+    write_new_artifact(spent_artifact, experiments_dir)
+
+    remaining = live._remaining_budget(experiments_dir)
+
+    assert remaining == ISSUE_8_BUDGET_USD - spent_artifact.total_cost_usd
+
+
+def test_negative_cost_is_treated_as_absent_and_books_reservation() -> None:
+    # IMPORTANT ruling 2: a negative reported cost must not be trusted (it would free budget).
+    artifact = _run(CostingProvider(Decimal("-1")), "100", models=(FAST,))
+    assert all(call.cost_source is CostSource.RESERVATION for call in artifact.calls)
+    assert artifact.total_cost_usd == Decimal("9.000")
+
+
+def test_nan_cost_is_treated_as_absent_and_books_reservation() -> None:
+    # IMPORTANT ruling 2: a non-finite reported cost must not crash the run.
+    artifact = _run(CostingProvider(Decimal("NaN")), "100", models=(FAST,))
+    assert all(call.cost_source is CostSource.RESERVATION for call in artifact.calls)
+    assert artifact.total_cost_usd == Decimal("9.000")
+
+
+class CrashingProvider:
+    """Answers normally until ``crash_at``, then raises instead of returning a response."""
+
+    def __init__(
+        self, cost: Decimal, *, crash_at: int, exc_factory: type[BaseException] = RuntimeError
+    ) -> None:
+        self.cost = cost
+        self.crash_at = crash_at
+        self.exc_factory = exc_factory
+        self.calls = 0
+
+    def complete(self, request: AnswerRequest) -> ProviderResponse:
+        self.calls += 1
+        if self.calls == self.crash_at:
+            raise self.exc_factory("simulated crash")
+        return ProviderResponse(
+            content=ABSTAIN,
+            usage=Usage(input_tokens=10, output_tokens=5, cost_usd=self.cost),
+            raw={"id": f"gen-{self.calls}"},
+            provider_model=request.model.model_id,
+            latency_seconds=0.1,
+        )
+
+
+def test_runtime_error_mid_run_books_reservation_and_still_yields_an_artifact() -> None:
+    # CRITICAL ruling: a crash after paid calls must not make that spend invisible.
+    provider = CrashingProvider(Decimal("0.01"), crash_at=3)
+    with pytest.raises(RuntimeError) as exc_info:
+        _run(provider, "100", models=(FAST,))
+    artifact = exc_info.value.live_run_artifact  # type: ignore[attr-defined]
+    assert artifact.status is RunStatus.INCOMPLETE
+    assert len(artifact.calls) == 3
+    assert artifact.calls[-1].cost_source is CostSource.RESERVATION
+    assert artifact.total_cost_usd >= Decimal("0.01") * 2 + Decimal("1.00")
+
+
+def test_keyboard_interrupt_mid_run_books_reservation_and_still_yields_an_artifact() -> None:
+    provider = CrashingProvider(Decimal("0.01"), crash_at=3, exc_factory=KeyboardInterrupt)
+    with pytest.raises(KeyboardInterrupt) as exc_info:
+        _run(provider, "100", models=(FAST,))
+    artifact = exc_info.value.live_run_artifact  # type: ignore[attr-defined]
+    assert artifact.status is RunStatus.INCOMPLETE
+    assert len(artifact.calls) == 3
+    assert artifact.calls[-1].cost_source is CostSource.RESERVATION
+    assert artifact.total_cost_usd >= Decimal("0.01") * 2 + Decimal("1.00")
