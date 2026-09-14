@@ -293,6 +293,38 @@ def test_runtime_error_mid_run_books_reservation_and_still_yields_an_artifact() 
     assert artifact.total_cost_usd >= Decimal("0.01") * 2 + Decimal("1.00")
 
 
+def test_call_record_build_failure_still_books_the_paid_call_as_a_reservation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Review must-fix (Task 10 follow-up): a paid call must never disappear from the artifact
+    # just because call_record_from_outcome() itself raised (e.g. a pydantic validation error)
+    # after the ledger already settled that call's cost.
+    original_call_record_from_outcome = live.call_record_from_outcome
+    calls_made = {"n": 0}
+
+    def flaky_call_record_from_outcome(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        calls_made["n"] += 1
+        if calls_made["n"] == 2:
+            raise ValueError("simulated call-record construction failure")
+        return original_call_record_from_outcome(*args, **kwargs)
+
+    monkeypatch.setattr(live, "call_record_from_outcome", flaky_call_record_from_outcome)
+
+    provider = CostingProvider(Decimal("0.01"))
+    with pytest.raises(ValueError) as exc_info:
+        _run(provider, "100", models=(FAST,))
+
+    artifact = exc_info.value.live_run_artifact  # type: ignore[attr-defined]
+    assert artifact.status is RunStatus.INCOMPLETE
+    assert len(artifact.calls) == 2
+    assert artifact.calls[0].cost_source is CostSource.PROVIDER
+    assert artifact.calls[0].cost_usd == Decimal("0.01")
+    assert artifact.calls[1].cost_source is CostSource.RESERVATION
+    assert artifact.calls[1].error_kind == "crashed"
+    # The reservation is the worst-case cost for one FAST call: 1000 tokens x $0.001 = $1.00.
+    assert artifact.total_cost_usd == Decimal("0.01") + Decimal("1.00")
+
+
 def test_keyboard_interrupt_mid_run_books_reservation_and_still_yields_an_artifact() -> None:
     provider = CrashingProvider(Decimal("0.01"), crash_at=3, exc_factory=KeyboardInterrupt)
     with pytest.raises(KeyboardInterrupt) as exc_info:

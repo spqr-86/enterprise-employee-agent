@@ -32,6 +32,14 @@ propagate.
 # exception, writes it, and re-raises; a failure in write_new_artifact itself is never caught,
 # so it always propagates loudly.
 #
+# Crash safety (Task 10 fix round 2, review must-fix): pending_reservation is cleared only AFTER
+# calls.append(call_record_from_outcome(...)) succeeds, never before. If call_record_from_outcome
+# itself raises (e.g. a pydantic validation error) or KeyboardInterrupt lands in that gap, the
+# already-settled reservation is still open, so the BaseException handler above books it as a
+# RESERVATION call — the paid call is never silently dropped from the artifact. Because the
+# append never ran, the normal call record for that case never made it into `calls`, so the
+# crash-injected RESERVATION record is the only entry for it: no double count.
+#
 # _sanitized_actual_cost() (Task 10 fix round 1, IMPORTANT 2) treats a missing, non-finite
 # (NaN/inf) or negative provider-reported cost as absent, which books the reservation instead —
 # a malformed or negative cost must never be trusted to free budget or crash the ledger.
@@ -231,7 +239,6 @@ def run_live(
                     reserved: Decimal | None = reservations[0]
                 else:
                     cost, source, reserved = Decimal("0"), CostSource.NONE, None
-                pending_reservation = None
                 calls.append(
                     call_record_from_outcome(
                         case.id,
@@ -242,6 +249,7 @@ def run_live(
                         cost_source=source,
                     )
                 )
+                pending_reservation = None
             if status is RunStatus.INCOMPLETE:
                 break
         return build_artifact()
