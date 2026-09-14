@@ -1,0 +1,14 @@
+{
+  "id": "gen-fixture-citation-outside",
+  "model": "openai/gpt-5-mini",
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "{\"status\": \"answered\", \"answer_text\": \"See the HR note.\", \"citations\": [\"synthetic/hr-only-note\"], \"clarifying_question\": null}"
+      }
+    }
+  ],
+  "usage": {"prompt_tokens": 10500, "completion_tokens": 180, "total_tokens": 10680, "cost": 0.000311}
+}
