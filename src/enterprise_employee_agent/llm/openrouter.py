@@ -12,8 +12,10 @@ connection errors and unexpected bodies become ``ProviderError``. v0.1 does not 
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -33,6 +35,22 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # Top-level body fields kept in the run artifact. Everything else, including message.reasoning,
 # is dropped: the framework forbids recording hidden model reasoning.
 RECORDED_RESPONSE_FIELDS = ("id", "model", "provider", "created", "usage")
+ERROR_MESSAGE_MAX_CHARS = 300
+# The error body never carries the key; this is defence in depth before the text is recorded.
+_SECRET_PATTERNS = (re.compile(r"Bearer\s+\S+", re.IGNORECASE), re.compile(r"sk-or-[\w-]*"))
+
+
+def _error_message(response: httpx.Response) -> str | None:
+    """``error.message`` from a JSON error body, secrets redacted, truncated; else None."""
+    try:
+        message = response.json()["error"]["message"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(message, str) or not message.strip():
+        return None
+    for pattern in _SECRET_PATTERNS:
+        message = pattern.sub("[redacted]", message)
+    return message[:ERROR_MESSAGE_MAX_CHARS]
 
 
 class OpenRouterProvider:
@@ -95,10 +113,12 @@ class OpenRouterProvider:
         latency = self._clock() - started
 
         if http_response.status_code >= 400:
+            detail = f"provider returned HTTP {http_response.status_code}"
+            message = _error_message(http_response)
+            if message is not None:
+                detail = f"{detail}: {message}"
             raise ProviderError(
-                ProviderErrorKind.HTTP_ERROR,
-                f"provider returned HTTP {http_response.status_code}",
-                status_code=http_response.status_code,
+                ProviderErrorKind.HTTP_ERROR, detail, status_code=http_response.status_code
             )
         try:
             body = http_response.json()
@@ -137,14 +157,20 @@ class OpenRouterProvider:
         )
 
 
-def fetch_model_pricing(
+@dataclass(frozen=True, slots=True)
+class ModelListing:
+    pricing: ModelPricing
+    supported_parameters: frozenset[str]
+
+
+def fetch_model_listing(
     model_ids: Sequence[str],
     *,
     client: httpx.Client,
     base_url: str = OPENROUTER_BASE_URL,
     timeout_seconds: float = 30.0,
-) -> dict[str, ModelPricing]:
-    """Read per-token USD prices for the given models from the public models listing."""
+) -> dict[str, ModelListing]:
+    """Read per-token USD prices and supported request parameters in one models-listing GET."""
     try:
         response = client.get(f"{base_url.rstrip('/')}/models", timeout=timeout_seconds)
     except httpx.TimeoutException as error:
@@ -158,22 +184,22 @@ def fetch_model_pricing(
             status_code=response.status_code,
         )
     try:
-        listing = {item["id"]: item["pricing"] for item in response.json()["data"]}
+        listing = {item["id"]: item for item in response.json()["data"]}
     except (ValueError, KeyError, TypeError) as error:
         raise ProviderError(
             ProviderErrorKind.MALFORMED_RESPONSE, "unexpected models body"
         ) from error
 
-    result: dict[str, ModelPricing] = {}
+    result: dict[str, ModelListing] = {}
     for model_id in model_ids:
-        pricing = listing.get(model_id)
-        if pricing is None:
+        item = listing.get(model_id)
+        if item is None:
             raise ProviderError(
                 ProviderErrorKind.MALFORMED_RESPONSE, f"model not listed: {model_id}"
             )
         try:
-            prompt = Decimal(str(pricing["prompt"]))
-            completion = Decimal(str(pricing["completion"]))
+            prompt = Decimal(str(item["pricing"]["prompt"]))
+            completion = Decimal(str(item["pricing"]["completion"]))
         except (KeyError, TypeError, InvalidOperation) as error:
             raise ProviderError(
                 ProviderErrorKind.MALFORMED_RESPONSE, f"invalid pricing for {model_id}"
@@ -182,7 +208,28 @@ def fetch_model_pricing(
             raise ProviderError(
                 ProviderErrorKind.MALFORMED_RESPONSE, f"negative pricing for {model_id}"
             )
-        result[model_id] = ModelPricing(
-            prompt_usd_per_token=prompt, completion_usd_per_token=completion
+        raw_parameters = item.get("supported_parameters")
+        parameters = (
+            frozenset(name for name in raw_parameters if isinstance(name, str))
+            if isinstance(raw_parameters, list)
+            else frozenset()
+        )
+        result[model_id] = ModelListing(
+            pricing=ModelPricing(prompt_usd_per_token=prompt, completion_usd_per_token=completion),
+            supported_parameters=parameters,
         )
     return result
+
+
+def fetch_model_pricing(
+    model_ids: Sequence[str],
+    *,
+    client: httpx.Client,
+    base_url: str = OPENROUTER_BASE_URL,
+    timeout_seconds: float = 30.0,
+) -> dict[str, ModelPricing]:
+    """Read per-token USD prices for the given models from the public models listing."""
+    listing = fetch_model_listing(
+        model_ids, client=client, base_url=base_url, timeout_seconds=timeout_seconds
+    )
+    return {model_id: item.pricing for model_id, item in listing.items()}

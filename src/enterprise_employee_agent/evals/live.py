@@ -6,7 +6,9 @@ so a budget abort loses comparison data before decision data. Writes one artifac
 ``experiments/issue-8/<run_id>.json``.
 
 Exit codes from ``main()``: 0 complete; 2 refused by preflight (no ``--confirm-spend``, no key,
-dirty tree); 3 incomplete (including a budget refusal of the first call).
+dirty tree, a run model whose models-listing entry lacks a required request parameter); 3
+incomplete (including a budget refusal of the first call, a provider rejection with HTTP
+400/401/402/403/404, or two consecutive provider errors on one model).
 
 A crash mid-run (an unexpected exception, or Ctrl-C) must never make already-spent money
 invisible to the next run's budget: ``run_live()`` catches ``BaseException`` around the call
@@ -47,6 +49,13 @@ propagate.
 # _remaining_budget() (Task 10 fix round 1, IMPORTANT 1) always includes EXPERIMENTS_DIR in the
 # cumulative spend, in addition to --output-dir when it points elsewhere, so --output-dir can
 # never be used to read a fresh $0.50 budget.
+#
+# Provider-error stop (final review C1): a provider error with HTTP 400/401/402/403/404 means the
+# request configuration is rejected and would be rejected on every call, so the run stops as
+# INCOMPLETE after that one call; any two consecutive provider errors (timeouts and 5xx
+# included) on one model stop it too. main() refuses before spend (exit 2) when a run model's
+# models-listing entry lacks response_format, structured_outputs, max_tokens or a top-level key
+# of its extra_params; the same GET supplies pricing.
 
 from __future__ import annotations
 
@@ -91,7 +100,7 @@ from enterprise_employee_agent.knowledge.answer import (
 )
 from enterprise_employee_agent.knowledge.corpus import load_manifest
 from enterprise_employee_agent.knowledge.retrieval import DEFAULT_K, RETRIEVAL_VERSION
-from enterprise_employee_agent.llm.openrouter import OpenRouterProvider, fetch_model_pricing
+from enterprise_employee_agent.llm.openrouter import OpenRouterProvider, fetch_model_listing
 from enterprise_employee_agent.llm.provider import (
     AnswerProvider,
     AnswerRequest,
@@ -118,6 +127,14 @@ COMPARISON_MODEL = ModelConfig(
 )
 LIVE_MODELS = (DECISION_MODEL, COMPARISON_MODEL)
 
+# A request the provider rejects with one of these statuses will be rejected on every call:
+# stop immediately instead of booking a reservation per case (final review C1).
+FATAL_PROVIDER_STATUS_CODES = frozenset({400, 401, 402, 403, 404})
+MAX_CONSECUTIVE_PROVIDER_ERRORS = 2
+# Request fields every run model must list in the OpenRouter models listing, besides the
+# top-level keys of its extra_params.
+REQUIRED_PARAMETERS = ("response_format", "structured_outputs", "max_tokens")
+
 EXIT_COMPLETE = 0
 EXIT_REFUSED = 2
 EXIT_INCOMPLETE = 3
@@ -143,6 +160,12 @@ def _sanitized_actual_cost(response_cost: Decimal | None) -> Decimal | None:
     if response_cost is None or not response_cost.is_finite() or response_cost < 0:
         return None
     return response_cost
+
+
+def missing_parameters(model: ModelConfig, supported: frozenset[str]) -> tuple[str, ...]:
+    """Request parameters this model's configuration sends that the provider does not list."""
+    required = (*REQUIRED_PARAMETERS, *model.extra_params)
+    return tuple(name for name in required if name not in supported)
 
 
 def run_live(
@@ -203,6 +226,7 @@ def run_live(
     try:
         for model in models:
             model_pricing = pricing[model.model_id]
+            consecutive_errors = 0
             for case in selected:
                 pending_case, pending_model, pending_reservation = case, model, None
                 reservations: list[Decimal] = []
@@ -252,6 +276,25 @@ def run_live(
                     )
                 )
                 pending_reservation = None
+                if outcome.kind is not OutcomeKind.PROVIDER_ERROR:
+                    consecutive_errors = 0
+                    continue
+                consecutive_errors += 1
+                where = f"case {case.id}, model {model.model_id}"
+                if outcome.status_code in FATAL_PROVIDER_STATUS_CODES:
+                    status = RunStatus.INCOMPLETE
+                    abort_reason = (
+                        f"provider rejected the request with HTTP {outcome.status_code}; "
+                        f"stopping before further spend ({where}): {outcome.detail}"
+                    )
+                    break
+                if consecutive_errors >= MAX_CONSECUTIVE_PROVIDER_ERRORS:
+                    status = RunStatus.INCOMPLETE
+                    abort_reason = (
+                        f"{consecutive_errors} consecutive provider errors; stopping before "
+                        f"further spend ({where}): {outcome.detail}"
+                    )
+                    break
             if status is RunStatus.INCOMPLETE:
                 break
         return build_artifact()
@@ -309,7 +352,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Run the paid Issue #8 live baseline. Exit codes: 0 complete; "
-            "2 refused by preflight (no --confirm-spend, no key, dirty tree); "
+            "2 refused by preflight (no --confirm-spend, no key, dirty tree, a model "
+            "lacking a required request parameter); "
             "3 incomplete (including a budget refusal of the first call)."
         )
     )
@@ -348,7 +392,22 @@ def main(argv: list[str] | None = None) -> int:
     print(f"remaining Issue #8 budget: ${remaining}")
 
     with httpx.Client() as client:
-        pricing = fetch_model_pricing([model.model_id for model in LIVE_MODELS], client=client)
+        listing = fetch_model_listing([model.model_id for model in LIVE_MODELS], client=client)
+        unsupported = {
+            model.model_id: missing
+            for model in LIVE_MODELS
+            if (missing := missing_parameters(model, listing[model.model_id].supported_parameters))
+        }
+        if unsupported:
+            print(
+                "refusing to start: provider does not list required parameters: "
+                + "; ".join(
+                    f"{model_id}: {', '.join(names)}" for model_id, names in unsupported.items()
+                ),
+                file=sys.stderr,
+            )
+            return EXIT_REFUSED
+        pricing = {model_id: item.pricing for model_id, item in listing.items()}
         try:
             artifact = run_live(
                 cases=cases,

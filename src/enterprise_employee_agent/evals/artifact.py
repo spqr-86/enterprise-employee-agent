@@ -61,6 +61,8 @@ class CallRecord(ContractModel):
     cost_usd: Decimal
     cost_source: CostSource
     latency_seconds: float | None
+    # HTTP status of a provider error; None for successes and non-HTTP failures.
+    status_code: int | None = None
 
 
 class ModelRunConfig(ContractModel):
@@ -140,6 +142,7 @@ def call_record_from_outcome(
         cost_usd=cost_usd,
         cost_source=cost_source,
         latency_seconds=response.latency_seconds if response is not None else None,
+        status_code=outcome.status_code,
     )
 
 

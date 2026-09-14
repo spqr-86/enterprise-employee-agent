@@ -93,6 +93,7 @@ class PipelineOutcome:
     violation_kind: ViolationKind | None = None
     error_kind: ProviderErrorKind | None = None
     detail: str | None = None
+    status_code: int | None = None
 
     @property
     def abstained(self) -> bool:
@@ -140,6 +141,7 @@ def answer_question(
             request_record=request.record(),
             error_kind=error.kind,
             detail=error.detail,
+            status_code=error.status_code,
         )
     try:
         answer = parse_answer(response.content, retrieved_ids)

@@ -161,8 +161,92 @@ def test_provider_error_is_recorded_and_books_reservation() -> None:
     # Controller ruling (D4): a provider error still books the worst-case reservation, since no
     # actual cost was ever reported for that call.
     assert {call.cost_source for call in artifact.calls} == {CostSource.RESERVATION}
-    assert artifact.total_cost_usd == Decimal("9.000")
+    # Final review C1: two consecutive provider errors on one model stop the run.
+    assert len(artifact.calls) == 2
+    assert artifact.total_cost_usd == Decimal("2.000")
     assert "sk-live-test-secret" not in artifact.model_dump_json()
+
+
+def _http_provider(statuses: list[int], seen: list[httpx.Request]) -> OpenRouterProvider:
+    """Serves the given HTTP statuses in order, then valid abstentions."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        index = len(seen) - 1
+        if index < len(statuses):
+            return httpx.Response(
+                statuses[index], json={"error": {"message": f"rejected #{index + 1}"}}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": ABSTAIN}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.01},
+            },
+        )
+
+    return OpenRouterProvider(
+        "sk-live-test-secret", client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+
+
+@pytest.mark.parametrize("status_code", [400, 401, 402, 403, 404])
+def test_rejected_request_configuration_stops_the_run_after_one_call(status_code: int) -> None:
+    seen: list[httpx.Request] = []
+    artifact = _run(_http_provider([status_code], seen), "100")
+    assert len(seen) == 1
+    assert artifact.status is RunStatus.INCOMPLETE
+    assert len(artifact.calls) == 1
+    call = artifact.calls[0]
+    assert call.status_code == status_code
+    assert call.detail == f"provider returned HTTP {status_code}: rejected #1"
+    assert artifact.abort_reason is not None
+    assert f"HTTP {status_code}" in artifact.abort_reason
+    assert call.case_id in artifact.abort_reason and "fast" in artifact.abort_reason
+
+
+def test_two_consecutive_server_errors_on_one_model_stop_the_run() -> None:
+    seen: list[httpx.Request] = []
+    artifact = _run(_http_provider([503, 500], seen), "100")
+    assert len(seen) == 2
+    assert artifact.status is RunStatus.INCOMPLETE
+    assert [call.status_code for call in artifact.calls] == [503, 500]
+    assert artifact.abort_reason is not None and "consecutive" in artifact.abort_reason
+
+
+def test_single_server_error_followed_by_success_does_not_stop_the_run() -> None:
+    seen: list[httpx.Request] = []
+    artifact = _run(_http_provider([503], seen), "100")
+    assert artifact.status is RunStatus.COMPLETE
+    assert len(artifact.calls) == 18
+    assert artifact.calls[0].status_code == 503
+    assert artifact.calls[1].status_code is None
+
+
+def test_non_consecutive_errors_do_not_stop_the_run() -> None:
+    seen: list[httpx.Request] = []
+    # 503, success, 429 on the same model: never two in a row.
+    statuses = [503, 200, 429]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        index = len(seen) - 1
+        if index < len(statuses) and statuses[index] != 200:
+            return httpx.Response(statuses[index], json={"error": {"message": "busy"}})
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": ABSTAIN}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.01},
+            },
+        )
+
+    provider = OpenRouterProvider(
+        "sk-test", client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    artifact = _run(provider, "100")
+    assert artifact.status is RunStatus.COMPLETE
+    assert len(artifact.calls) == 18
 
 
 def test_main_refuses_without_confirmation(capsys: pytest.CaptureFixture[str]) -> None:
@@ -195,25 +279,81 @@ def test_main_refuses_on_dirty_tree_before_creating_a_client(
     assert "dirty" in capsys.readouterr().err
 
 
-def test_main_returns_incomplete_on_budget_refusal_of_first_call(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def _supported(model: ModelConfig) -> list[str]:
+    return ["max_tokens", "response_format", "structured_outputs", *model.extra_params]
+
+
+def _models_body(overrides: dict[str, list[str]] | None = None) -> dict[str, object]:
+    overrides = overrides or {}
+    return {
+        "data": [
+            {
+                "id": model.model_id,
+                "pricing": {"prompt": "0", "completion": "1"},
+                "supported_parameters": overrides.get(model.model_id, _supported(model)),
+            }
+            for model in live.LIVE_MODELS
+        ]
+    }
+
+
+def _patch_main_offline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    models_body: dict[str, object],
+    chat_requests: list[httpx.Request],
 ) -> None:
+    """Preflight passes; the only HTTP traffic goes to a MockTransport."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
     monkeypatch.setattr(live, "_git", lambda *args: "" if args[0] == "status" else "f" * 40)
     monkeypatch.setattr(live, "EXPERIMENTS_DIR", tmp_path)
 
-    def _fake_pricing(model_ids, *, client):  # type: ignore[no-untyped-def]
-        del client
-        return {
-            model_id: ModelPricing(
-                prompt_usd_per_token=Decimal("0"), completion_usd_per_token=Decimal("1")
-            )
-            for model_id in model_ids
-        }
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json=models_body)
+        chat_requests.append(request)
+        return httpx.Response(500, json={"error": {"message": "must not be called"}})
 
-    monkeypatch.setattr(live, "fetch_model_pricing", _fake_pricing)
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        live.httpx, "Client", lambda: real_client(transport=httpx.MockTransport(handler))
+    )
 
+
+def test_main_returns_incomplete_on_budget_refusal_of_first_call(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    chat: list[httpx.Request] = []
+    _patch_main_offline(monkeypatch, tmp_path, _models_body(), chat)
     assert main(["--confirm-spend"]) == 3
+    assert chat == []
+
+
+@pytest.mark.parametrize(
+    ("model", "missing"),
+    [
+        (DECISION_MODEL, "structured_outputs"),
+        (DECISION_MODEL, "reasoning"),
+        (COMPARISON_MODEL, "temperature"),
+        (COMPARISON_MODEL, "response_format"),
+        (COMPARISON_MODEL, "max_tokens"),
+    ],
+)
+def test_main_refuses_before_spend_when_a_model_lacks_a_required_parameter(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    model: ModelConfig,
+    missing: str,
+) -> None:
+    supported = [name for name in _supported(model) if name != missing]
+    chat: list[httpx.Request] = []
+    _patch_main_offline(monkeypatch, tmp_path, _models_body({model.model_id: supported}), chat)
+    assert main(["--confirm-spend", "--output-dir", str(tmp_path)]) == 2
+    assert chat == []
+    assert list(tmp_path.glob("*.json")) == []
+    err = capsys.readouterr().err
+    assert model.model_id in err and missing in err
 
 
 def test_budget_counts_experiments_dir_even_when_output_dir_differs(

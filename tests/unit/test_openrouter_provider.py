@@ -8,7 +8,11 @@ import httpx
 import pytest
 
 from enterprise_employee_agent.llm.contract import ANSWER_JSON_SCHEMA
-from enterprise_employee_agent.llm.openrouter import OpenRouterProvider, fetch_model_pricing
+from enterprise_employee_agent.llm.openrouter import (
+    OpenRouterProvider,
+    fetch_model_listing,
+    fetch_model_pricing,
+)
 from enterprise_employee_agent.llm.provider import (
     AnswerRequest,
     ModelConfig,
@@ -207,3 +211,55 @@ def test_fetch_model_pricing_rejects_missing_or_invalid_prices(body: dict[str, o
     with pytest.raises(ProviderError) as excinfo:
         fetch_model_pricing(["openai/gpt-5-mini"], client=client)
     assert excinfo.value.kind is ProviderErrorKind.MALFORMED_RESPONSE
+
+
+def test_http_error_detail_keeps_sanitized_truncated_provider_message() -> None:
+    message = (
+        "Invalid schema for response_format: Bearer sk-or-v1-abcdef123 leaked sk-or-v1-zzz9 "
+        + "x" * 500
+    )
+    with pytest.raises(ProviderError) as excinfo:
+        _provider(
+            lambda request: httpx.Response(400, json={"error": {"message": message}})
+        ).complete(_request())
+    detail = excinfo.value.detail
+    assert excinfo.value.status_code == 400
+    assert detail.startswith("provider returned HTTP 400: Invalid schema for response_format")
+    assert "sk-or-" not in detail
+    assert "abcdef123" not in detail
+    assert "zzz9" not in detail
+    assert len(detail) <= len("provider returned HTTP 400: ") + 300
+
+
+def test_http_error_with_non_json_body_keeps_status_only() -> None:
+    with pytest.raises(ProviderError) as excinfo:
+        _provider(lambda request: httpx.Response(502, text="<html>bad gateway</html>")).complete(
+            _request()
+        )
+    assert excinfo.value.detail == "provider returned HTTP 502"
+
+
+def test_fetch_model_listing_reads_pricing_and_supported_parameters() -> None:
+    body = {
+        "data": [
+            {
+                "id": "openai/gpt-5-mini",
+                "pricing": {"prompt": "0.00000025", "completion": "0.000002"},
+                "supported_parameters": ["max_tokens", "response_format", "reasoning"],
+            },
+            {"id": "deepseek/deepseek-v3.2", "pricing": {"prompt": "0", "completion": "0"}},
+        ]
+    }
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=body)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    listing = fetch_model_listing(["openai/gpt-5-mini", "deepseek/deepseek-v3.2"], client=client)
+    assert len(requests) == 1
+    gpt = listing["openai/gpt-5-mini"]
+    assert gpt.pricing.completion_usd_per_token == Decimal("0.000002")
+    assert gpt.supported_parameters == frozenset({"max_tokens", "response_format", "reasoning"})
+    assert listing["deepseek/deepseek-v3.2"].supported_parameters == frozenset()
