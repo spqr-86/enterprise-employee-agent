@@ -7,8 +7,8 @@ from enterprise_employee_agent.evals.scorer import EvalReport
 
 def format_report(report: EvalReport) -> str:
     lines = [
-        "Knowledge categories (STUB — no retrieval yet, Issue #8; "
-        "measures the pipeline, not the agent):"
+        "Knowledge categories (offline scripted responses — exercises the pipeline, "
+        "not a model; live baseline: evals/live.py):"
     ]
     for aggregate in report.knowledge:
         if aggregate.total == 0:

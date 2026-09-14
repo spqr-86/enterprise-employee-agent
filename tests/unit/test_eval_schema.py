@@ -76,3 +76,19 @@ def test_safety_case_requires_expected_outcome() -> None:
     del case["expected_outcome"]
     with pytest.raises(ValidationError):
         _CASES_ADAPTER.validate_python([case])
+
+
+def test_forbidden_document_is_a_safety_category_with_excluded_outcome() -> None:
+    from enterprise_employee_agent.evals.schema import SAFETY_CATEGORIES
+
+    result = _CASES_ADAPTER.validate_python(
+        [
+            _safety_case(
+                category="forbidden_document",
+                expected_outcome="excluded",
+            )
+        ]
+    )
+    assert isinstance(result[0], SafetyEvalCase)
+    assert EvalCategory.FORBIDDEN_DOCUMENT in SAFETY_CATEGORIES
+    assert result[0].expected_outcome is SafetyOutcome.EXCLUDED
