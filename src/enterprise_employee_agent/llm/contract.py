@@ -10,10 +10,13 @@ case. v0.1 does no retry or repair (decision 0004).
 # structured-output requests (Task 4). parse_answer() is the boundary function later tasks
 # (answer pipeline, Task 5) call: it turns untrusted model text into an AnswerContract or raises
 # ContractViolation, checking JSON parse, schema validation, and citation membership in that
-# order.
+# order. inline_schema_refs() resolves local $ref/$defs so the generated schema carries no
+# references (final review I3: some non-OpenAI strict structured-output implementations reject
+# them); the schema is still generated from AnswerContract, never hand-written.
 
 from __future__ import annotations
 
+import copy
 import json
 from collections.abc import Collection
 from enum import StrEnum
@@ -51,11 +54,42 @@ class AnswerContract(ContractModel):
         return self
 
 
+_LOCAL_REF_PREFIX = "#/$defs/"
+
+
+def inline_schema_refs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of ``schema`` with every local ``#/$defs/<name>`` reference inlined.
+
+    Sibling keywords next to a ``$ref`` are kept after the resolved definition's own keys. The
+    ``$defs`` block is dropped. Non-local or unknown references raise ``ValueError``.
+    """
+    definitions = schema.get("$defs", {})
+
+    def resolve(node: object, trail: tuple[str, ...]) -> object:
+        if isinstance(node, list):
+            return [resolve(item, trail) for item in node]
+        if not isinstance(node, dict):
+            return node
+        if "$ref" in node:
+            reference = node["$ref"]
+            name = reference.removeprefix(_LOCAL_REF_PREFIX) if isinstance(reference, str) else ""
+            if not isinstance(reference, str) or name == reference or name not in definitions:
+                raise ValueError(f"unsupported schema reference: {reference!r}")
+            if name in trail:
+                raise ValueError(f"recursive schema reference: {reference!r}")
+            resolved = resolve(copy.deepcopy(definitions[name]), (*trail, name))
+            siblings = {key: resolve(value, trail) for key, value in node.items() if key != "$ref"}
+            return {**resolved, **siblings}  # type: ignore[dict-item]
+        return {key: resolve(value, trail) for key, value in node.items() if key != "$defs"}
+
+    return resolve(schema, ())  # type: ignore[return-value]
+
+
 # Generated from the model so the schema sent to the provider cannot drift from validation.
-# Checked 2026-09-13 with pydantic in this repo: all four properties required,
-# additionalProperties false (ContractModel forbids extras), status as $defs/$ref, nullable
-# fields as anyOf string/null, no defaults.
-ANSWER_JSON_SCHEMA: dict[str, Any] = AnswerContract.model_json_schema()
+# Checked 2026-09-14 with pydantic in this repo: all four properties required,
+# additionalProperties false (ContractModel forbids extras), status inlined as an enum of
+# strings (no $ref/$defs), nullable fields as anyOf string/null, no defaults.
+ANSWER_JSON_SCHEMA: dict[str, Any] = inline_schema_refs(AnswerContract.model_json_schema())
 
 
 class ViolationKind(StrEnum):

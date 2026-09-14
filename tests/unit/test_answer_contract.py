@@ -11,6 +11,7 @@ from enterprise_employee_agent.llm.contract import (
     AnswerStatus,
     ContractViolation,
     ViolationKind,
+    inline_schema_refs,
     parse_answer,
 )
 
@@ -88,11 +89,51 @@ def test_citation_outside_retrieved_set_is_a_violation() -> None:
 
 
 def test_json_schema_is_generated_from_the_model_and_strict_compatible() -> None:
-    assert ANSWER_JSON_SCHEMA == AnswerContract.model_json_schema()
+    assert ANSWER_JSON_SCHEMA == inline_schema_refs(AnswerContract.model_json_schema())
     # Strict structured outputs need every property required and no extra properties.
     assert set(ANSWER_JSON_SCHEMA["required"]) == set(AnswerContract.model_fields)
     assert set(ANSWER_JSON_SCHEMA["properties"]) == set(AnswerContract.model_fields)
     assert ANSWER_JSON_SCHEMA["additionalProperties"] is False
     assert '"default"' not in json.dumps(ANSWER_JSON_SCHEMA)
-    assert ANSWER_JSON_SCHEMA["properties"]["status"] == {"$ref": "#/$defs/AnswerStatus"}
-    assert ANSWER_JSON_SCHEMA["$defs"]["AnswerStatus"]["enum"] == [s.value for s in AnswerStatus]
+    # Final review I3: no $ref/$defs, which some non-OpenAI strict implementations reject.
+    serialized = json.dumps(ANSWER_JSON_SCHEMA)
+    assert "$ref" not in serialized
+    assert "$defs" not in serialized
+    assert ANSWER_JSON_SCHEMA["properties"]["status"]["enum"] == [s.value for s in AnswerStatus]
+    assert ANSWER_JSON_SCHEMA["properties"]["status"]["type"] == "string"
+    for field in ("answer_text", "clarifying_question"):
+        assert ANSWER_JSON_SCHEMA["properties"][field]["anyOf"] == [
+            {"type": "string"},
+            {"type": "null"},
+        ]
+
+
+def test_inline_schema_refs_resolves_nested_refs_deterministically() -> None:
+    schema = {
+        "$defs": {
+            "Inner": {"type": "string", "enum": ["a"]},
+            "Outer": {"type": "object", "properties": {"x": {"$ref": "#/$defs/Inner"}}},
+        },
+        "type": "object",
+        "properties": {
+            "o": {"$ref": "#/$defs/Outer", "description": "kept"},
+            "items": {"type": "array", "items": {"$ref": "#/$defs/Inner"}},
+        },
+    }
+    before = json.dumps(schema, sort_keys=True)
+    result = inline_schema_refs(schema)
+    assert json.dumps(schema, sort_keys=True) == before  # input not mutated
+    assert result == {
+        "type": "object",
+        "properties": {
+            "o": {
+                "type": "object",
+                "properties": {"x": {"type": "string", "enum": ["a"]}},
+                "description": "kept",
+            },
+            "items": {"type": "array", "items": {"type": "string", "enum": ["a"]}},
+        },
+    }
+    assert inline_schema_refs(schema) == result
+    with pytest.raises(ValueError):
+        inline_schema_refs({"properties": {"x": {"$ref": "https://example.com/s.json"}}})
