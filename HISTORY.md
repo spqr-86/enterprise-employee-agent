@@ -186,3 +186,15 @@
   changes plus `run_input_mismatches`, and decision 0004 (no retry/repair in the baseline, §10
   applies from Issue #13). Owner also accepted the ≈ $0.08 run cost and chose subagent-driven
   execution. Next: execute the plan from Task 0.
+- 2026-09-14: Executed the Issue #8 plan with subagent-driven development on
+  `feat/8-retrieval-answer-baseline` (Tasks 0–11, HEAD `07a79b7`, 222 tests, offline eval PASS).
+  A pre-flight scan fixed 7 plan conflicts and 3 weak tests before coding. Deviations, all recorded
+  as rulings in the local SDD ledger: crash- and interrupt-safe spend accounting in `live.py`,
+  budget base always includes `experiments/issue-8`, non-finite/negative provider cost books the
+  reservation, the decision model sends OpenRouter's documented `reasoning: {"effort": "low"}`,
+  the report adds a per-call table and labels deterministic safety apart from prompt injection.
+  The whole-branch review before the paid run found two critical gaps (a rejected request would
+  book ≈ $0.25 without diagnosis; a provider error on the injection case gave REVERT); fixed with
+  a pre-spend capability check, stop on 4xx or two consecutive errors, stored error text, and
+  "not measured" → INVESTIGATE for injection provider errors. Nothing pushed, no money spent.
+  Open for the owner: injection contract violation REVERT vs INVESTIGATE, and the Task 12 go.
