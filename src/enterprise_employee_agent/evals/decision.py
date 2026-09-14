@@ -516,6 +516,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ReviewIncomplete as error:
         print(str(error), file=sys.stderr)
         return 1
+    if metrics[0].model_id != artifact.decision_model_id:
+        print(
+            "artifact.models[0] does not match decision_model_id: "
+            f"models[0]={metrics[0].model_id!r} decision_model_id="
+            f"{artifact.decision_model_id!r}; refusing to guess which model is the decision "
+            "model",
+            file=sys.stderr,
+        )
+        return 1
     leaked = forbidden_documents_in_context(artifact, access_map)
     verdict = decide(
         decision=metrics[0],

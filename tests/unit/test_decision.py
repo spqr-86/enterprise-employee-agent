@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from datetime import date
 from decimal import Decimal
@@ -8,11 +9,14 @@ from pathlib import Path
 import pytest
 from artifact_factory import make_artifact
 
+from enterprise_employee_agent.evals import decision as decision_module
 from enterprise_employee_agent.evals.artifact import (
     CallRecord,
     CostSource,
+    ModelRunConfig,
     ReviewVerdict,
     RunStatus,
+    write_new_artifact,
 )
 from enterprise_employee_agent.evals.decision import (
     ReviewIncomplete,
@@ -24,11 +28,12 @@ from enterprise_employee_agent.evals.decision import (
     run_input_mismatches,
     source_changed_since,
 )
+from enterprise_employee_agent.evals.run import CASES_PATH as RUN_CASES_PATH
 from enterprise_employee_agent.evals.schema import EvalCategory, KnowledgeEvalCase
 from enterprise_employee_agent.evals.scorer import SafetyCaseResult
 from enterprise_employee_agent.evals.validator import load_cases
 from enterprise_employee_agent.knowledge.access import load_document_access_map
-from enterprise_employee_agent.knowledge.answer import OutcomeKind, PromptTemplate
+from enterprise_employee_agent.knowledge.answer import OutcomeKind, PromptTemplate, load_prompt
 
 DATASET_PATH = Path("evals/cases/v0.1.yaml")
 US = "people-policies/leave-of-absence/us.md"
@@ -407,3 +412,141 @@ def test_source_changed_since_sees_uncommitted_untracked_and_committed_changes(
     assert source_changed_since(revision, repo_root=tmp_path) is True  # uncommitted
     git("commit", "-q", "-am", "later")
     assert source_changed_since(revision, repo_root=tmp_path) is True  # committed
+
+
+def test_revert_precedes_incomplete_run() -> None:
+    # Fix round 1, ruling 3: pin that a REVERT condition (deterministic safety failure) wins
+    # even when the run also aborted on budget (run_complete=False) — REVERT is not merely one
+    # more way to reach INVESTIGATE, it must be checked and returned before run_complete matters.
+    assert (
+        decide(
+            decision=_metrics(),
+            deterministic_safety=_safety(passed=False),
+            forbidden_in_context=(),
+            run_complete=False,
+        )
+        is Verdict.REVERT
+    )
+
+
+def _cli_artifact(tmp_path: Path, **overrides: object):  # type: ignore[no-untyped-def]
+    """A RunArtifact whose dataset/prompt/access/corpus fields match the real repo state, so
+    ``decision.main()`` only refuses on whatever a test deliberately breaks via ``overrides``.
+    ``source_changed_since`` must be monkeypatched by the caller — it inspects real git state,
+    which is unrelated to what these CLI tests exercise.
+    """
+    access_map = load_document_access_map()
+    prompt = load_prompt()
+    fields: dict[str, object] = {
+        "decision_model_id": MODEL,
+        "calls": tuple(_good_calls()),
+        "reviews": _reviews(),
+        "code_revision": "a" * 40,
+        "dataset_sha256": hashlib.sha256(RUN_CASES_PATH.read_bytes()).hexdigest(),
+        "prompt_version": prompt.version,
+        "prompt_sha256": prompt.sha256,
+        "access_version": access_map.access_version,
+        "corpus_version": access_map.corpus_version,
+        "status": RunStatus.COMPLETE,
+        "models": (
+            ModelRunConfig(
+                model_id=MODEL,
+                max_tokens=10,
+                timeout_seconds=1.0,
+                params={},
+                prompt_usd_per_token=Decimal("0.00000025"),
+                completion_usd_per_token=Decimal("0.000002"),
+            ),
+        ),
+    }
+    fields.update(overrides)
+    artifact = make_artifact(**fields)
+    return write_new_artifact(artifact, tmp_path)
+
+
+def test_main_happy_path_writes_report_and_exits_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(decision_module, "source_changed_since", lambda *a, **k: False)
+    path = _cli_artifact(tmp_path)
+
+    exit_code = decision_module.main([str(path), "--next-action", "Ship it."])
+
+    assert exit_code == 0
+    report_path = path.with_name(f"{path.stem}-report.md")
+    assert report_path.exists()
+    text = report_path.read_text(encoding="utf-8")
+    assert "Verdict: **KEEP**" in text
+    out = capsys.readouterr().out
+    assert f"KEEP -> {report_path}" in out
+
+
+def test_main_refuses_when_source_changed_since_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(decision_module, "source_changed_since", lambda *a, **k: True)
+    path = _cli_artifact(tmp_path)
+
+    exit_code = decision_module.main([str(path), "--next-action", "n"])
+
+    assert exit_code == 1
+    assert "differ from the run revision" in capsys.readouterr().err
+    assert not path.with_name(f"{path.stem}-report.md").exists()
+
+
+def test_main_refuses_on_dataset_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(decision_module, "source_changed_since", lambda *a, **k: False)
+    path = _cli_artifact(tmp_path, dataset_sha256="0" * 64)
+
+    exit_code = decision_module.main([str(path), "--next-action", "n"])
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "run inputs differ from the artifact" in err
+    assert "dataset_sha256" in err
+    assert not path.with_name(f"{path.stem}-report.md").exists()
+
+
+def test_main_refuses_on_review_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(decision_module, "source_changed_since", lambda *a, **k: False)
+    path = _cli_artifact(tmp_path, reviews=())
+
+    exit_code = decision_module.main([str(path), "--next-action", "n"])
+
+    assert exit_code == 1
+    assert "manual review missing for" in capsys.readouterr().err
+    assert not path.with_name(f"{path.stem}-report.md").exists()
+
+
+def test_main_refuses_when_models_order_disagrees_with_decision_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Ruling 2: models[0] must be the decision model (run_live's write order is the only reason
+    # metrics[0] can be treated as the decision model in decide()). If that invariant is ever
+    # violated, main() must refuse loudly instead of silently deciding on the wrong model.
+    monkeypatch.setattr(decision_module, "source_changed_since", lambda *a, **k: False)
+    path = _cli_artifact(
+        tmp_path,
+        models=(
+            ModelRunConfig(
+                model_id="other/decision-model",
+                max_tokens=10,
+                timeout_seconds=1.0,
+                params={},
+                prompt_usd_per_token=Decimal("0.00000025"),
+                completion_usd_per_token=Decimal("0.000002"),
+            ),
+        ),
+    )
+
+    exit_code = decision_module.main([str(path), "--next-action", "n"])
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "other/decision-model" in err
+    assert MODEL in err
+    assert not path.with_name(f"{path.stem}-report.md").exists()
