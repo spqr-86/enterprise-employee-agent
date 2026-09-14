@@ -10,7 +10,13 @@ import pytest
 from artifact_factory import make_artifact
 
 from enterprise_employee_agent.evals import live
-from enterprise_employee_agent.evals.artifact import CostSource, RunStatus, write_new_artifact
+from enterprise_employee_agent.evals.artifact import (
+    CostSource,
+    RunArtifact,
+    RunStatus,
+    load_run_artifact,
+    write_new_artifact,
+)
 from enterprise_employee_agent.evals.budget import ISSUE_8_BUDGET_USD
 from enterprise_employee_agent.evals.live import (
     COMPARISON_MODEL,
@@ -476,3 +482,117 @@ def test_keyboard_interrupt_mid_run_books_reservation_and_still_yields_an_artifa
     assert len(artifact.calls) == 3
     assert artifact.calls[-1].cost_source is CostSource.RESERVATION
     assert artifact.total_cost_usd >= Decimal("0.01") * 2 + Decimal("1.00")
+
+
+FIXED_NOW = datetime(2026, 9, 14, 8, 30, tzinfo=UTC)
+
+
+def test_main_writes_the_partial_artifact_when_run_live_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    chat: list[httpx.Request] = []
+    _patch_main_offline(monkeypatch, tmp_path, _models_body(), chat)
+    partial = make_artifact(status=RunStatus.INCOMPLETE, abort_reason="crashed: RuntimeError")
+
+    def _crash(**kwargs: object) -> None:
+        error = RuntimeError("simulated crash")
+        error.live_run_artifact = partial  # type: ignore[attr-defined]
+        raise error
+
+    monkeypatch.setattr(live, "run_live", _crash)
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        main(["--confirm-spend", "--output-dir", str(tmp_path)])
+    written = tmp_path / f"{partial.run_id}.json"
+    assert written.exists()
+    assert load_run_artifact(written) == partial
+
+
+@pytest.mark.parametrize("crash", [False, True])
+def test_main_dumps_the_artifact_to_stderr_when_the_write_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    crash: bool,
+) -> None:
+    chat: list[httpx.Request] = []
+    _patch_main_offline(monkeypatch, tmp_path, _models_body(), chat)
+    artifact = make_artifact()
+
+    def _run_live(**kwargs: object):  # type: ignore[no-untyped-def]
+        if crash:
+            error = RuntimeError("simulated crash")
+            error.live_run_artifact = artifact  # type: ignore[attr-defined]
+            raise error
+        return artifact
+
+    def _failing_write(*args: object, **kwargs: object) -> Path:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(live, "run_live", _run_live)
+    monkeypatch.setattr(live, "write_new_artifact", _failing_write)
+    with pytest.raises(OSError, match="disk full"):
+        main(["--confirm-spend", "--output-dir", str(tmp_path)])
+    err = capsys.readouterr().err
+    dumped = err[err.index("{") : err.rindex("}") + 1]
+    assert RunArtifact.model_validate_json(dumped) == artifact
+    assert "sk-test" not in err
+
+
+def test_main_refuses_before_spend_when_the_target_artifact_exists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    chat: list[httpx.Request] = []
+    _patch_main_offline(monkeypatch, tmp_path, _models_body(), chat)
+    monkeypatch.setattr(live, "_utcnow", lambda: FIXED_NOW)
+    existing = write_new_artifact(make_artifact(run_id="20260914T083000Z"), tmp_path)
+    before = existing.read_text(encoding="utf-8")
+
+    def _forbidden(**kwargs: object) -> None:
+        raise AssertionError("run_live must not start")
+
+    monkeypatch.setattr(live, "run_live", _forbidden)
+    assert main(["--confirm-spend", "--output-dir", str(tmp_path)]) == 2
+    assert chat == []
+    assert existing.read_text(encoding="utf-8") == before
+    assert "already exists" in capsys.readouterr().err
+
+
+def test_main_refuses_before_spend_when_the_output_dir_is_not_writable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    chat: list[httpx.Request] = []
+    _patch_main_offline(monkeypatch, tmp_path, _models_body(), chat)
+    not_a_dir = tmp_path / "file"
+    not_a_dir.write_text("x", encoding="utf-8")
+
+    def _forbidden(**kwargs: object) -> None:
+        raise AssertionError("run_live must not start")
+
+    monkeypatch.setattr(live, "run_live", _forbidden)
+    assert main(["--confirm-spend", "--output-dir", str(not_a_dir / "sub")]) == 2
+    assert chat == []
+    assert "not writable" in capsys.readouterr().err
+
+
+def test_crash_handler_dumps_known_state_when_the_artifact_cannot_be_built(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def _broken_artifact(**kwargs: object) -> None:
+        raise ValueError("simulated artifact validation failure")
+
+    monkeypatch.setattr(live, "RunArtifact", _broken_artifact)
+    provider = CrashingProvider(Decimal("0.01"), crash_at=3)
+    with pytest.raises(RuntimeError, match="simulated crash") as exc_info:
+        _run(provider, "100", models=(FAST,))
+    assert getattr(exc_info.value, "live_run_artifact", None) is None
+    err = capsys.readouterr().err
+    dumped = json.loads(err[err.index("{") : err.rindex("}") + 1])
+    assert dumped["run_id"] == CONTEXT.run_id
+    assert dumped["status"] == "incomplete"
+    assert "simulated artifact validation failure" in dumped["artifact_build_error"]
+    assert [call["cost_source"] for call in dumped["calls"]] == [
+        "provider",
+        "provider",
+        "reservation",
+    ]
+    assert Decimal(dumped["total_cost_usd"]) == Decimal("1.02")

@@ -31,8 +31,8 @@ propagate.
 # call, marks the run INCOMPLETE, builds the artifact, stashes it on the exception as
 # .live_run_artifact, and re-raises the *original* exception unchanged (never a wrapper) so
 # callers keep normal exception semantics. main() reads .live_run_artifact off a caught
-# exception, writes it, and re-raises; a failure in write_new_artifact itself is never caught,
-# so it always propagates loudly.
+# exception, writes it, and re-raises; a failure in write_new_artifact itself dumps the artifact
+# JSON to stderr and then propagates loudly (final review I2).
 #
 # Crash safety (Task 10 fix round 2, review must-fix): pending_reservation is cleared only AFTER
 # calls.append(call_record_from_outcome(...)) succeeds, never before. If call_record_from_outcome
@@ -56,11 +56,19 @@ propagate.
 # included) on one model stop it too. main() refuses before spend (exit 2) when a run model's
 # models-listing entry lacks response_format, structured_outputs, max_tokens or a top-level key
 # of its extra_params; the same GET supplies pricing.
+#
+# Record safety (final review I2): before any spend, main() builds and validates an empty-calls
+# artifact with build_run_artifact() and refuses (exit 2) if the target file already exists or
+# the output directory cannot be created or written. If writing the artifact fails after calls
+# were made, _write_or_dump() prints the artifact JSON (no key material) to stderr before
+# re-raising. If run_live()'s crash handler cannot build the artifact, it prints the known state
+# (calls, cost, reasons) to stderr as JSON and re-raises the original exception.
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -162,6 +170,56 @@ def _sanitized_actual_cost(response_cost: Decimal | None) -> Decimal | None:
     return response_cost
 
 
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def build_run_artifact(
+    *,
+    context: RunContext,
+    access_map: DocumentAccessMap,
+    prompt: PromptTemplate,
+    models: Sequence[ModelConfig],
+    pricing: Mapping[str, ModelPricing],
+    remaining_budget_usd: Decimal,
+    status: RunStatus,
+    abort_reason: str | None,
+    calls: Sequence[CallRecord],
+) -> RunArtifact:
+    return RunArtifact(
+        run_id=context.run_id,
+        started_at=context.started_at,
+        code_revision=context.code_revision,
+        code_dirty=context.code_dirty,
+        corpus_version=access_map.corpus_version,
+        access_version=access_map.access_version,
+        dataset_path=context.dataset_path,
+        dataset_sha256=context.dataset_sha256,
+        prompt_version=prompt.version,
+        prompt_sha256=prompt.sha256,
+        retrieval_version=RETRIEVAL_VERSION,
+        k=DEFAULT_K,
+        eval_role=EVAL_ROLE.value,
+        decision_model_id=models[0].model_id,
+        models=tuple(
+            ModelRunConfig(
+                model_id=model.model_id,
+                max_tokens=model.max_tokens,
+                timeout_seconds=model.timeout_seconds,
+                params=dict(model.extra_params),
+                prompt_usd_per_token=pricing[model.model_id].prompt_usd_per_token,
+                completion_usd_per_token=pricing[model.model_id].completion_usd_per_token,
+            )
+            for model in models
+        ),
+        budget_total_usd=ISSUE_8_BUDGET_USD,
+        budget_remaining_at_start_usd=remaining_budget_usd,
+        status=status,
+        abort_reason=abort_reason,
+        calls=tuple(calls),
+    )
+
+
 def missing_parameters(model: ModelConfig, supported: frozenset[str]) -> tuple[str, ...]:
     """Request parameters this model's configuration sends that the provider does not list."""
     required = (*REQUIRED_PARAMETERS, *model.extra_params)
@@ -190,37 +248,16 @@ def run_live(
     pending_reservation: Decimal | None = None
 
     def build_artifact() -> RunArtifact:
-        return RunArtifact(
-            run_id=context.run_id,
-            started_at=context.started_at,
-            code_revision=context.code_revision,
-            code_dirty=context.code_dirty,
-            corpus_version=access_map.corpus_version,
-            access_version=access_map.access_version,
-            dataset_path=context.dataset_path,
-            dataset_sha256=context.dataset_sha256,
-            prompt_version=prompt.version,
-            prompt_sha256=prompt.sha256,
-            retrieval_version=RETRIEVAL_VERSION,
-            k=DEFAULT_K,
-            eval_role=EVAL_ROLE.value,
-            decision_model_id=models[0].model_id,
-            models=tuple(
-                ModelRunConfig(
-                    model_id=model.model_id,
-                    max_tokens=model.max_tokens,
-                    timeout_seconds=model.timeout_seconds,
-                    params=dict(model.extra_params),
-                    prompt_usd_per_token=pricing[model.model_id].prompt_usd_per_token,
-                    completion_usd_per_token=pricing[model.model_id].completion_usd_per_token,
-                )
-                for model in models
-            ),
-            budget_total_usd=ISSUE_8_BUDGET_USD,
-            budget_remaining_at_start_usd=remaining_budget_usd,
+        return build_run_artifact(
+            context=context,
+            access_map=access_map,
+            prompt=prompt,
+            models=models,
+            pricing=pricing,
+            remaining_budget_usd=remaining_budget_usd,
             status=status,
             abort_reason=abort_reason,
-            calls=tuple(calls),
+            calls=calls,
         )
 
     try:
@@ -328,8 +365,61 @@ def run_live(
         status = RunStatus.INCOMPLETE
         if abort_reason is None:
             abort_reason = f"crashed: {type(exc).__name__}: {exc}"
-        exc.live_run_artifact = build_artifact()  # type: ignore[attr-defined]
+        try:
+            exc.live_run_artifact = build_artifact()  # type: ignore[attr-defined]
+        except Exception as build_error:
+            _dump_known_state(context, status, abort_reason, calls, build_error)
         raise
+
+
+def _dump_known_state(
+    context: RunContext,
+    status: RunStatus,
+    abort_reason: str | None,
+    calls: Sequence[CallRecord],
+    build_error: Exception,
+) -> None:
+    """Last resort when no artifact can be built: never let paid calls vanish silently."""
+    known = {
+        "run_id": context.run_id,
+        "code_revision": context.code_revision,
+        "status": status.value,
+        "abort_reason": abort_reason,
+        "artifact_build_error": f"{type(build_error).__name__}: {build_error}",
+        "total_cost_usd": str(sum((call.cost_usd for call in calls), Decimal("0"))),
+        "calls": [call.model_dump(mode="json") for call in calls],
+    }
+    print(
+        "run artifact could not be built; record this state by hand:",
+        file=sys.stderr,
+    )
+    print(json.dumps(known, indent=2, default=str), file=sys.stderr)
+
+
+def _write_or_dump(artifact: RunArtifact, directory: Path) -> Path:
+    try:
+        return write_new_artifact(artifact, directory)
+    except BaseException:
+        print(
+            "writing the run artifact failed; its content follows so the spend is not lost:",
+            file=sys.stderr,
+        )
+        print(artifact.model_dump_json(indent=2), file=sys.stderr)
+        raise
+
+
+def _output_refusal(directory: Path, run_id: str) -> str | None:
+    """Why the artifact could not be written to ``directory``, or None when it can."""
+    target = directory / f"{run_id}.json"
+    if target.exists():
+        return f"target artifact {target} already exists"
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        return f"output directory {directory} is not writable: {error}"
+    if not os.access(directory, os.W_OK | os.X_OK):
+        return f"output directory {directory} is not writable"
+    return None
 
 
 def _git(*args: str) -> str:
@@ -353,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "Run the paid Issue #8 live baseline. Exit codes: 0 complete; "
             "2 refused by preflight (no --confirm-spend, no key, dirty tree, a model "
-            "lacking a required request parameter); "
+            "lacking a required request parameter, an existing or unwritable artifact target); "
             "3 incomplete (including a budget refusal of the first call)."
         )
     )
@@ -380,7 +470,7 @@ def main(argv: list[str] | None = None) -> int:
     validate_dataset(cases, frozenset(document.id for document in load_manifest().documents))
     access_map = load_document_access_map()
     remaining = _remaining_budget(args.output_dir)
-    started_at = datetime.now(UTC)
+    started_at = _utcnow()
     context = RunContext(
         run_id=started_at.strftime("%Y%m%dT%H%M%SZ"),
         started_at=started_at,
@@ -408,6 +498,26 @@ def main(argv: list[str] | None = None) -> int:
             )
             return EXIT_REFUSED
         pricing = {model_id: item.pricing for model_id, item in listing.items()}
+        prompt = load_prompt()
+        try:
+            build_run_artifact(
+                context=context,
+                access_map=access_map,
+                prompt=prompt,
+                models=LIVE_MODELS,
+                pricing=pricing,
+                remaining_budget_usd=remaining,
+                status=RunStatus.INCOMPLETE,
+                abort_reason=None,
+                calls=(),
+            )
+        except ValueError as error:
+            print(f"refusing to start: run artifact would not validate: {error}", file=sys.stderr)
+            return EXIT_REFUSED
+        refusal = _output_refusal(args.output_dir, context.run_id)
+        if refusal is not None:
+            print(f"refusing to start: {refusal}", file=sys.stderr)
+            return EXIT_REFUSED
         try:
             artifact = run_live(
                 cases=cases,
@@ -417,17 +527,18 @@ def main(argv: list[str] | None = None) -> int:
                 pricing=pricing,
                 remaining_budget_usd=remaining,
                 context=context,
+                prompt=prompt,
             )
         except BaseException as exc:
             # CRITICAL fix (round 1): a crash mid-run must not make already-spent money
             # invisible to the next run's budget. run_live() attaches the best-available
             # artifact to the exception; write it before letting the crash propagate. A failure
-            # in write_new_artifact itself is never caught here, so it always propagates loudly.
+            # in the write dumps the artifact to stderr and propagates loudly (final review I2).
             partial = getattr(exc, "live_run_artifact", None)
             if partial is not None:
-                write_new_artifact(partial, args.output_dir)
+                _write_or_dump(partial, args.output_dir)
             raise
-    path = write_new_artifact(artifact, args.output_dir)
+    path = _write_or_dump(artifact, args.output_dir)
     print(
         f"{artifact.status.value}: {len(artifact.calls)} calls, "
         f"cost ${artifact.total_cost_usd} -> {path}"
