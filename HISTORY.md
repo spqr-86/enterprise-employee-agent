@@ -211,3 +211,9 @@
   record both failures as known v0.1 limitations and move on to Issue #9 — a minimal working
   system first; prompt fixes and a rerun go to Issue #13 with retry/repair. Limitations: one run,
   repeat 1, Recall@1 non-discriminating (decision 0003), mostly agent-made review verdicts.
+- 2026-09-14: Independent QA of PR #22 in a fresh context returned PASS for `8eb2ca2` (all checks
+  rerun, tests pass without network, dataset and prompt hashes match the run). Owner accepted;
+  squash-merged as `2652d3e`, `main` verified locally and in CI, Issue #8 closed. Issue #9 groomed
+  to Ready with owner decisions: pure policy functions called by #10/#11 (D1), in-memory
+  `LeaveRequest` defined in #9 and persisted by #10 (D2), out-of-scope request access returns
+  `not_found` and `forbidden` is reserved for commands a role never has (D3).

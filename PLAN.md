@@ -94,22 +94,25 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   `20260914T145319Z`: complete, 18 calls, $0.024; verdict **INVESTIGATE** — groundedness 6/7,
   task success 5/7, abstention 1/1, prompt injection PASS, deterministic safety 6/6. Failures:
   invented Texas table rows; answered before clarifying on missing data. Recorded as known v0.1
-  limitations; report `experiments/issue-8/20260914T145319Z-report.md`.
+  limitations; report `experiments/issue-8/20260914T145319Z-report.md`. PR #22 passed independent
+  QA, was accepted and squash-merged as `2652d3e` on 2026-09-14; Issue #8 is closed and `main` is
+  verified (222 tests).
+- Issue #9 (authorization and role projections) is groomed and Ready; owner decisions D1–D3 are
+  recorded in the Issue.
 - No product behavior or external integration exists; the frozen corpus is imported and
   validated offline.
 
 ## 7. Next steps
 
-1. Integrate the Issue #7 micro-eval branch after Petr decides merge/PR/keep.
-2. Finish Issue #8 hand-over (PR, independent QA), then proceed to Issue #9 with the two baseline
-   failures as known limitations; prompt fixes and a rerun belong to Issue #13, which adds
+1. Implement Issue #9 (authorization policy and role projections). The two Issue #8 baseline
+   failures stay known limitations; prompt fixes and a rerun belong to Issue #13, which adds
    retry/repair per decision 0004.
-3. Test and implement authorization, version-bound confirmation, idempotency, workflow
+2. Test and implement version-bound confirmation, idempotency, workflow
    transitions, persistence, and the fake-adapter vertical slice.
-4. Integrate the knowledge and workflow paths, then build a server-rendered FastAPI interface
+3. Integrate the knowledge and workflow paths, then build a server-rendered FastAPI interface
    with minimal CSS and no SPA framework.
-5. Complete Docker Compose, offline CI, README, and clean-clone verification.
-6. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
+4. Complete Docker Compose, offline CI, README, and clean-clone verification.
+5. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
    limits, and release decision.
 
 ## 8. Open decisions
