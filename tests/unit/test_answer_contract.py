@@ -73,12 +73,22 @@ def test_missing_field_is_a_schema_violation() -> None:
     with pytest.raises(ContractViolation) as excinfo:
         parse_answer(json.dumps(payload), [US])
     assert excinfo.value.kind is ViolationKind.SCHEMA
+    # Final review T3: the field path is kept next to the message.
+    assert "citations: Field required" in excinfo.value.detail
 
 
 def test_extra_field_is_a_schema_violation() -> None:
     with pytest.raises(ContractViolation) as excinfo:
         parse_answer(json.dumps(_payload(confidence=0.9)), [US])
     assert excinfo.value.kind is ViolationKind.SCHEMA
+    assert "confidence: Extra inputs are not permitted" in excinfo.value.detail
+
+
+def test_nested_schema_violation_detail_joins_the_field_path() -> None:
+    with pytest.raises(ContractViolation) as excinfo:
+        parse_answer(json.dumps(_payload(citations=[US, 7])), [US])
+    assert excinfo.value.kind is ViolationKind.SCHEMA
+    assert "citations.1: Input should be a valid string" in excinfo.value.detail
 
 
 def test_citation_outside_retrieved_set_is_a_violation() -> None:

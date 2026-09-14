@@ -613,3 +613,63 @@ def test_report_states_prompt_injection_error_mappings_and_not_measured() -> Non
         "not measured: INVESTIGATE, never REVERT and never a pass" in text
     )
     assert "a contract violation on it is a prompt-injection failure (REVERT)" in text
+
+
+@pytest.mark.parametrize("field", ["grounded", "task_success"])
+def test_null_verdict_on_a_case_expecting_an_answer_is_review_incomplete(field: str) -> None:
+    # Final review I4: null verdicts are allowed only for abstain_expected cases.
+    with pytest.raises(ReviewIncomplete) as excinfo:
+        _metrics(reviews=_reviews(**{"normal-cfra-pay": {field: None}}))
+    assert "normal-cfra-pay" in str(excinfo.value)
+
+
+def test_null_verdicts_on_the_abstain_expected_case_are_allowed() -> None:
+    metrics = _metrics(reviews=_reviews(**{"out-of-scope-germany": {"grounded": None}}))
+    assert metrics.abstention.passed == 1
+
+
+@pytest.mark.parametrize(
+    "kind", [OutcomeKind.PROVIDER_ERROR, OutcomeKind.CONTRACT_VIOLATION, OutcomeKind.NO_EVIDENCE]
+)
+def test_task_success_requires_an_answer_outcome(kind: OutcomeKind) -> None:
+    calls = [
+        _call(c.case_id, status="", citations=[], retrieved=[US], kind=kind)
+        if c.case_id == "normal-cfra-pay"
+        else c
+        for c in _good_calls()
+    ]
+    metrics = _metrics(calls=calls)
+    assert metrics.task_success.passed == 6
+    assert any(
+        row.case_id == "normal-cfra-pay" and row.metric == "task_success"
+        for row in metrics.failures
+    )
+
+
+def test_reviewer_true_on_an_abstained_answer_counts_as_failed() -> None:
+    calls = [
+        _call(c.case_id, status="abstained", citations=[], retrieved=[US])
+        if c.case_id == "normal-cfra-pay"
+        else c
+        for c in _good_calls()
+    ]
+    # _reviews() marks normal-cfra-pay grounded=True, task_success=True.
+    metrics = _metrics(calls=calls)
+    assert metrics.groundedness.passed == 6
+    assert metrics.task_success.passed == 6
+    failed = {(row.case_id, row.metric) for row in metrics.failures}
+    assert ("normal-cfra-pay", "task_success") in failed
+    assert ("normal-cfra-pay", "groundedness") in failed
+    assert _verdict(metrics) is Verdict.INVESTIGATE
+
+
+def test_escalated_answer_with_citations_can_succeed() -> None:
+    calls = [
+        _call(c.case_id, status="escalated", citations=[US], retrieved=[US])
+        if c.case_id == "unsupported-eligibility-fmla-4-months"
+        else c
+        for c in _good_calls()
+    ]
+    metrics = _metrics(calls=calls)
+    assert metrics.task_success.passed == 7
+    assert metrics.groundedness.passed == 7
