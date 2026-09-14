@@ -87,7 +87,7 @@ def test_models_are_configured_as_the_plan_fixes() -> None:
         model_id="openai/gpt-5-mini",
         max_tokens=4000,
         timeout_seconds=120.0,
-        extra_params={"reasoning_effort": "low"},
+        extra_params={"reasoning": {"effort": "low"}},
     )
     assert COMPARISON_MODEL == ModelConfig(
         model_id="deepseek/deepseek-v3.2",
@@ -97,9 +97,10 @@ def test_models_are_configured_as_the_plan_fixes() -> None:
     )
 
 
-def test_decision_model_payload_has_no_temperature_and_has_reasoning_effort() -> None:
-    # Controller ruling: openai/gpt-5-mini does not accept temperature; reasoning_effort must
-    # be present instead. Assert on the actual payload OpenRouterProvider would send.
+def test_decision_model_payload_has_no_temperature_and_uses_reasoning_object() -> None:
+    # Controller ruling: openai/gpt-5-mini does not accept temperature; OpenRouter's documented
+    # reasoning object must be present instead. Assert on the actual payload OpenRouterProvider
+    # would send.
     provider = OpenRouterProvider("sk-unused", client=httpx.Client())
     request = AnswerRequest(
         model=DECISION_MODEL,
@@ -110,7 +111,8 @@ def test_decision_model_payload_has_no_temperature_and_has_reasoning_effort() ->
     )
     payload = provider.build_payload(request)
     assert "temperature" not in payload
-    assert payload["reasoning_effort"] == "low"
+    assert "reasoning_effort" not in payload
+    assert payload["reasoning"] == {"effort": "low"}
 
 
 def test_all_nine_cases_run_for_decision_model_first_then_comparison() -> None:

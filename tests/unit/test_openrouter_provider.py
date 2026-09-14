@@ -22,7 +22,7 @@ MODEL = ModelConfig(
     model_id="openai/gpt-5-mini",
     max_tokens=4000,
     timeout_seconds=12.5,
-    extra_params={"reasoning_effort": "low"},
+    extra_params={"reasoning": {"effort": "low"}},
 )
 
 
@@ -67,7 +67,7 @@ def test_request_shape_sent_to_openrouter() -> None:
         {"role": "user", "content": "user text"},
     ]
     assert body["max_tokens"] == 4000
-    assert body["reasoning_effort"] == "low"
+    assert body["reasoning"] == {"effort": "low"}
     assert body["provider"] == {"require_parameters": True}
     assert body["response_format"]["type"] == "json_schema"
     assert body["response_format"]["json_schema"]["strict"] is True
@@ -174,7 +174,7 @@ def test_record_contains_question_documents_model_and_params() -> None:
         "model_id": "openai/gpt-5-mini",
         "max_tokens": 4000,
         "timeout_seconds": 12.5,
-        "params": {"reasoning_effort": "low"},
+        "params": {"reasoning": {"effort": "low"}},
     }
 
 

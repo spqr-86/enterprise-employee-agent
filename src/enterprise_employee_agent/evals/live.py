@@ -106,7 +106,9 @@ DECISION_MODEL = ModelConfig(
     model_id="openai/gpt-5-mini",
     max_tokens=4000,  # includes reasoning tokens
     timeout_seconds=120.0,
-    extra_params={"reasoning_effort": "low"},  # the model does not accept temperature
+    # The model does not accept temperature; OpenRouter's documented reasoning object
+    # (see guides/best-practices/reasoning-tokens) sets the reasoning effort instead.
+    extra_params={"reasoning": {"effort": "low"}},
 )
 COMPARISON_MODEL = ModelConfig(
     model_id="deepseek/deepseek-v3.2",
