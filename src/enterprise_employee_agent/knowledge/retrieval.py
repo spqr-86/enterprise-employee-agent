@@ -5,6 +5,13 @@ of the intersection of question and document token sets. Ties break by document 
 so results are deterministic. Documents with zero overlap are never returned.
 """
 
+# ANCHOR: Role-filtered lexical retrieval for Issue #8. Input: a question string, the caller's
+# ActorRole, and a DocumentAccessMap (Task 1). Output: RetrievedDocument tuples ordered by
+# descending overlap score, filtered to documents the role may read before scoring runs.
+# rank_documents() is the unfiltered primitive used directly by tests and the forbidden-document
+# control; retrieve() is the authorized entry point consumed by later tasks (answer pipeline,
+# offline eval).
+
 from __future__ import annotations
 
 import re
