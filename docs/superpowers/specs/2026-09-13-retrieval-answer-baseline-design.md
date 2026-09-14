@@ -1,6 +1,6 @@
 # Retrieval and answer baseline — design
 
-Status: draft 2026-09-13, revision 3 (rewritten after three reviews: Codex, gpt-5.6-sol,
+Status: approved 2026-09-13, revision 3 (rewritten after three reviews: Codex, gpt-5.6-sol,
 adversarial review — see `2026-09-13-retrieval-answer-baseline-codex-review.md` and
 `2026-09-13-retrieval-answer-baseline-adversarial-review.md`)
 Related: Issue #8, decisions 0001, 0002, 0003, 0004, `DEVELOPMENT_FRAMEWORK.md` §9–10,

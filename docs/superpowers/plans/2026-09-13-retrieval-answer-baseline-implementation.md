@@ -4671,20 +4671,29 @@ make check-corpus && make eval-offline   # expected: corpus OK; PASS (7/7); exit
 - [ ] **Step 2: Re-check the models and prices**
 
 ```bash
-curl -s https://openrouter.ai/api/v1/models | python3 -c "import json,sys; d={m['id']:m for m in json.load(sys.stdin)['data']}; [print(i, d[i]['pricing'], 'response_format' in d[i]['supported_parameters']) for i in ('openai/gpt-5-mini','deepseek/deepseek-v3.2')]"
+curl -s https://openrouter.ai/api/v1/models | python3 -c "
+import json, sys
+d = {m['id']: m for m in json.load(sys.stdin)['data']}
+for i, extra in (('openai/gpt-5-mini', 'reasoning'), ('deepseek/deepseek-v3.2', 'temperature')):
+    p = d[i].get('supported_parameters') or []
+    print(i, d[i]['pricing'], {k: k in p for k in ('response_format', 'structured_outputs', 'max_tokens', extra)})
+"
 ```
 Expected: both IDs are listed, prices are within 2× of the values in Global Constraints, and
-`True` is printed for both. If a model is missing, or a price has risen by more than 2×, stop
-and ask Petr; do not change models silently.
+every printed flag is `True` (`response_format`, `structured_outputs`, `max_tokens`, plus
+`reasoning` for gpt-5-mini and `temperature` for deepseek). If a model is missing, a flag is
+`False`, or a price has risen by more than 2×, stop and ask Petr; do not change models
+silently. The CLI enforces the same parameter check and refuses before any spend (exit 2).
 
 - [ ] **Step 3: Get Petr's explicit go**
 
 Send Petr, and wait for an explicit "yes":
 
 > Stage: `in-progress`, Issue #8. Next allowed action: paid live run. Models
-> `openai/gpt-5-mini` (decision, reasoning_effort=low, max_tokens=4000) and
+> `openai/gpt-5-mini` (decision, reasoning={"effort": "low"}, max_tokens=4000) and
 > `deepseek/deepseek-v3.2` (comparison, temperature=0, max_tokens=1500); 9 cases × 2 = 18
-> sequential calls; expected ≈ $0.08; hard cap $0.50 cumulative for Issue #8. Revision
+> sequential calls; worst-case reservation ≈ $0.25 per run; expected ≈ $0.08; hard cap $0.50
+> cumulative for Issue #8. Revision
 > `<git rev-parse HEAD>`. Run?
 
 - [ ] **Step 4: Run**

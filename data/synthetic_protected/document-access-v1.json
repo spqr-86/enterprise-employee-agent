@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "access_version": "document-access-v1",
+  "corpus_version": "us-leave-2026-09-12",
+  "documents": [
+    {"id": "people-policies/leave-of-absence/_index.md", "visibility": "public"},
+    {"id": "people-policies/leave-of-absence/us.md", "visibility": "public"},
+    {
+      "id": "synthetic/hr-only-note",
+      "visibility": "hr_only",
+      "path": "documents/hr-only-note.md",
+      "sha256": "27921fb106e4f5f0205a1cec04cb215a6c828cc34bbbb0fa38598571181062ef",
+      "bytes": 418
+    }
+  ]
+}

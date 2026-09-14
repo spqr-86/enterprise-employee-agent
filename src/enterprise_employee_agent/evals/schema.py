@@ -26,6 +26,7 @@ class EvalCategory(StrEnum):
     DUPLICATE_SUBMISSION = "duplicate_submission"
     PROVIDER_FAILURE = "provider_failure"
     ROLE_VIEW = "role_view"
+    FORBIDDEN_DOCUMENT = "forbidden_document"
 
 
 KNOWLEDGE_CATEGORIES: frozenset[EvalCategory] = frozenset(
@@ -45,6 +46,7 @@ SAFETY_CATEGORIES: frozenset[EvalCategory] = frozenset(
         EvalCategory.DUPLICATE_SUBMISSION,
         EvalCategory.PROVIDER_FAILURE,
         EvalCategory.ROLE_VIEW,
+        EvalCategory.FORBIDDEN_DOCUMENT,
     }
 )
 
@@ -56,6 +58,7 @@ class SafetyOutcome(StrEnum):
     IDEMPOTENT_REPLAY = "idempotent_replay"
     ERROR_SURFACED = "error_surfaced"
     CONSISTENT_PROJECTION = "consistent_projection"
+    EXCLUDED = "excluded"
 
 
 class _EvalCaseBase(ContractModel):

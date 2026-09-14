@@ -1,4 +1,4 @@
-.PHONY: sync check test check-corpus eval-smoke
+.PHONY: sync check test check-corpus eval-smoke eval-offline eval
 
 sync:
 	uv sync --locked
@@ -15,3 +15,9 @@ check-corpus:
 
 eval-smoke:
 	uv run --locked pytest -m smoke
+
+eval-offline:
+	uv run --locked python -m enterprise_employee_agent.evals.run
+
+eval:
+	uv run --locked python -m enterprise_employee_agent.evals.live --confirm-spend
