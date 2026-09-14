@@ -78,8 +78,7 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   state transitions, errors, and consistency tests. PR #20 passed independent QA and was accepted
   and squash-merged as `4d6002e` on 2026-09-13; Issue #6 is complete and `main` is verified (21
   unit tests pass).
-- Issue #7 (micro-eval dataset) implementation is complete on branch
-  `worktree-issue-7-micro-eval-dataset` (9 commits ahead of `main`, not yet merged): pydantic
+- Issue #7 (micro-eval dataset) is integrated into `main` and Issue #7 is closed: pydantic
   discriminated-union case schema, dataset validator, scorer, text reporting, the versioned
   `evals/cases/v0.1.yaml` (14 cases transcribed from the draft), and a `run.py` CLI wired against
   the real Issue #6 workflow contracts for 5 of 6 safety/workflow categories (`provider_failure`
@@ -90,15 +89,21 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   errors, `_REPO_ROOT` path resolution assumes an editable install, `abstain_expected` with
   non-empty `expected_evidence` is silently accepted, no `make eval` target/README pointer, and
   the `expects_clarification` field is metadata-only (not yet scored).
+- Issue #8 baseline pipeline (lexical k=1 retrieval, OpenRouter answer contract, budgeted live
+  runner, review and decision CLIs) is built on `feat/8-retrieval-answer-baseline`. Live run
+  `20260914T145319Z`: complete, 18 calls, $0.024; verdict **INVESTIGATE** — groundedness 6/7,
+  task success 5/7, abstention 1/1, prompt injection PASS, deterministic safety 6/6. Failures:
+  invented Texas table rows; answered before clarifying on missing data. Recorded as known v0.1
+  limitations; report `experiments/issue-8/20260914T145319Z-report.md`.
 - No product behavior or external integration exists; the frozen corpus is imported and
   validated offline.
 
 ## 7. Next steps
 
 1. Integrate the Issue #7 micro-eval branch after Petr decides merge/PR/keep.
-2. Build the simplest retrieval/answer baseline in Issue #8; select the live model and budget at
-   that gate, then publish the first error table. This also unblocks scoring
-   `provider_failure` and `prompt_injection` against real behavior instead of placeholders.
+2. Finish Issue #8 hand-over (PR, independent QA), then proceed to Issue #9 with the two baseline
+   failures as known limitations; prompt fixes and a rerun belong to Issue #13, which adds
+   retry/repair per decision 0004.
 3. Test and implement authorization, version-bound confirmation, idempotency, workflow
    transitions, persistence, and the fake-adapter vertical slice.
 4. Integrate the knowledge and workflow paths, then build a server-rendered FastAPI interface
@@ -109,8 +114,9 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
 
 ## 8. Open decisions
 
-- Issue #8 will select the current live provider/model and maximum evaluation spend immediately
-  before its baseline run; availability and pricing are intentionally not frozen during grooming.
+- Resolved in Issue #8 (2026-09-14): live provider OpenRouter; decision model
+  `openai/gpt-5-mini` (`reasoning: {"effort": "low"}`), comparison model `deepseek/deepseek-v3.2`
+  (`temperature: 0`); evaluation spend capped at $0.50 cumulative for Issue #8.
 
 ## 9. Target structure
 

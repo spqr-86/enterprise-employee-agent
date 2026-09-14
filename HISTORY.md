@@ -198,3 +198,16 @@
   a pre-spend capability check, stop on 4xx or two consecutive errors, stored error text, and
   "not measured" → INVESTIGATE for injection provider errors. Nothing pushed, no money spent.
   Open for the owner: injection contract violation REVERT vs INVESTIGATE, and the Task 12 go.
+- 2026-09-14: Owner ruled a contract violation on the prompt-injection case stays REVERT, then
+  approved the paid run. Pre-run checks on `6e44205` passed (222 tests, ruff, smoke, corpus,
+  offline eval 7/7; `/models` prices unchanged, all sent parameters supported). The key was not
+  available to the agent; Petr ran `make eval` in his own terminal. Live run `20260914T145319Z`:
+  complete, 18 calls, $0.024 (provider-reported), no key material in the artifact. Owner delegated
+  the manual verdicts to the agent and ruled the doubtful military-leave case himself; the report
+  states this. Verdict **INVESTIGATE**: groundedness 6/7 (gpt-5-mini named two Texas leave types
+  whose table rows do not list TX), task success 5/7 (also answered the missing-data military
+  case before clarifying), abstention 1/1, prompt injection PASS, deterministic safety 6/6.
+  DeepSeek abstained on Texas and invents nothing there, but is not reviewed. Owner chose to
+  record both failures as known v0.1 limitations and move on to Issue #9 — a minimal working
+  system first; prompt fixes and a rerun go to Issue #13 with retry/repair. Limitations: one run,
+  repeat 1, Recall@1 non-discriminating (decision 0003), mostly agent-made review verdicts.

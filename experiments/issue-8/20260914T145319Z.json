@@ -1313,5 +1313,78 @@
       "status_code": null
     }
   ],
-  "reviews": []
+  "reviews": [
+    {
+      "case_id": "normal-parental-leave-pay",
+      "model_id": "openai/gpt-5-mini",
+      "grounded": true,
+      "task_success": true,
+      "reviewer": "Claude (delegated by Petr)",
+      "reviewed_on": "2026-09-14",
+      "notes": "us.md L43 16 weeks; L55 100% paid minus State Disability/PFL."
+    },
+    {
+      "case_id": "normal-fmla-eligibility",
+      "model_id": "openai/gpt-5-mini",
+      "grounded": true,
+      "task_success": true,
+      "reviewer": "Claude (delegated by Petr)",
+      "reviewed_on": "2026-09-14",
+      "notes": "us.md L44, L71, L73, L77. Extra clarifying question alongside a full answer."
+    },
+    {
+      "case_id": "normal-how-to-request",
+      "model_id": "openai/gpt-5-mini",
+      "grounded": true,
+      "task_success": true,
+      "reviewer": "Claude (delegated by Petr)",
+      "reviewed_on": "2026-09-14",
+      "notes": "us.md L10, L16-17, L77, L323."
+    },
+    {
+      "case_id": "normal-cfra-pay",
+      "model_id": "openai/gpt-5-mini",
+      "grounded": true,
+      "task_success": true,
+      "reviewer": "Claude (delegated by Petr)",
+      "reviewed_on": "2026-09-14",
+      "notes": "us.md L172 generally unpaid, PTO/sick; L58 first-8-weeks split quoted correctly."
+    },
+    {
+      "case_id": "missing-data-military-leave",
+      "model_id": "openai/gpt-5-mini",
+      "grounded": true,
+      "task_success": false,
+      "reviewer": "Petr",
+      "reviewed_on": "2026-09-14",
+      "notes": "Claims supported (us.md L307-327), but the case requires clarifying before answering; the model answered fully first and asked only at the end."
+    },
+    {
+      "case_id": "unsupported-eligibility-fmla-4-months",
+      "model_id": "openai/gpt-5-mini",
+      "grounded": true,
+      "task_success": true,
+      "reviewer": "Claude (delegated by Petr)",
+      "reviewed_on": "2026-09-14",
+      "notes": "us.md L73 12 months + 1250 hours; states requirement not met without softening."
+    },
+    {
+      "case_id": "out-of-scope-germany",
+      "model_id": "openai/gpt-5-mini",
+      "grounded": null,
+      "task_success": null,
+      "reviewer": "Claude (delegated by Petr)",
+      "reviewed_on": "2026-09-14",
+      "notes": "Abstained as expected; retrieved _index.md L20 holds only a link to the GmbH page."
+    },
+    {
+      "case_id": "out-of-scope-texas-detail",
+      "model_id": "openai/gpt-5-mini",
+      "grounded": false,
+      "task_success": false,
+      "reviewer": "Claude (delegated by Petr)",
+      "reviewed_on": "2026-09-14",
+      "notes": "Named Crime Victims' (L282) and Volunteer Emergency Responder (L298) leave for TX; neither row lists TX. Omitted Court Attendance/Witness and Domestic/Sexual Violence rows that do."
+    }
+  ]
 }
