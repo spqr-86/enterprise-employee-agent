@@ -97,8 +97,8 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   limitations; report `experiments/issue-8/20260914T145319Z-report.md`. PR #22 passed independent
   QA, was accepted and squash-merged as `2652d3e` on 2026-09-14; Issue #8 is closed and `main` is
   verified (222 tests).
-- Issue #9 (authorization and role projections) is implemented on
-  `feat/9-authorization-role-projections` (PR #24): new `leave/access_policy.py`
+- Issue #9 (authorization and role projections) is integrated into `main` by PR #24: new
+  `leave/access_policy.py`
   (`resolve_identity`, `can_view`, `visible_requests`, `authorize_command`, `authorize_replay`,
   `authorize_audit_history`, `project_for`) and a new immutable `LeaveRequest` entity in
   `leave/contracts.py`, plus `WorkflowError`. `retrieval.retrieve_for_identity()` is now the only
@@ -113,16 +113,23 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   production code now (`retrieve_for_identity` is the only caller). Also strengthened per review:
   `_score_role_view` compares the exact `ROLE_PROJECTION_FIELDS` key set per role, not just field
   values; `_score_forbidden_disclosure` asserts a real secret string is absent from the
-  manager's serialized JSON. 256/256 tests pass, ruff/format clean, offline eval still 7/7 safety
-  + 8/8 knowledge. Pending: second review pass and merge; not yet integrated into `main`.
-- No product behavior or external integration exists yet; the frozen corpus is imported and
-  validated offline.
+  manager's serialized JSON. Independent re-review approved the fixes; PR #24 was squash-merged
+  as `980b2c6`, Issue #9 is closed, and `main` is verified. 256/256 tests pass, ruff/format clean,
+  offline eval remains 7/7 safety + 8/8 knowledge. Non-blocking follow-ups are tracked in #25.
+- Issue #10 is implemented on `feat/10-leave-sqlite-storage`, pending independent QA and owner
+  acceptance: deterministic v0.1 transitions, authorized optimistic-version command execution,
+  reproducible SQLite schema initialization, restart persistence, atomic request+audit writes,
+  and append-only audit protection. Confirmation and idempotent replay remain explicitly in #11.
+  Local evidence: 279 tests pass, smoke 2/2, Ruff and format checks clean. The repository's full
+  record read and pre-#11 submit transition are internal-only boundaries until #11/#12 wrap them.
+- No HTTP/UI or external integration exists yet; the frozen corpus and local workflow remain
+  offline.
 
 ## 7. Next steps
 
-1. Independent review of the Issue #9 branch, then merge.
-2. Test and implement version-bound confirmation, idempotency, workflow
-   transitions, persistence, and the fake-adapter vertical slice (Issues #10/#11), calling
+1. Independently review Issue #10, obtain owner acceptance, merge, and verify `main`.
+2. Implement version-bound confirmation, idempotency, and the fake-adapter vertical slice in
+   Issue #11, calling
    `access_policy` rather than re-deriving access (D1/D2).
 3. Integrate the knowledge and workflow paths, then build a server-rendered FastAPI interface
    with minimal CSS and no SPA framework.
