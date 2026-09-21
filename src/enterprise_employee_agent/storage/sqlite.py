@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from enterprise_employee_agent.leave.access_policy import authorize_command
+from enterprise_employee_agent.leave.access_policy import authorize_command, authorize_replay
 from enterprise_employee_agent.leave.contracts import (
     CancelDraftInput,
     ConfirmSubmitInput,
@@ -26,10 +26,11 @@ from enterprise_employee_agent.leave.contracts import (
     _CommandContext,
     _require_bound_command,
     build_audit_event,
+    command_fingerprint,
 )
 from enterprise_employee_agent.leave.state_machine import transition_target
 
-_LATEST_SCHEMA_VERSION = 1
+_LATEST_SCHEMA_VERSION = 2
 _MIGRATION_1 = (
     """CREATE TABLE leave_requests (
     request_id TEXT PRIMARY KEY,
@@ -63,13 +64,37 @@ _MIGRATION_1 = (
     BEFORE DELETE ON audit_events
     BEGIN SELECT RAISE(ABORT, 'audit events are append-only'); END""",
 )
-_MIGRATIONS = {1: _MIGRATION_1}
+_MIGRATION_2 = (
+    """CREATE TABLE idempotency_records (
+    actor_id TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    command_fingerprint TEXT NOT NULL,
+    request_id TEXT NOT NULL REFERENCES leave_requests(request_id),
+    result_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (actor_id, operation, idempotency_key)
+    )""",
+    """CREATE INDEX idempotency_records_request
+    ON idempotency_records(request_id)""",
+    """CREATE TRIGGER idempotency_records_no_update
+    BEFORE UPDATE ON idempotency_records
+    BEGIN SELECT RAISE(ABORT, 'idempotency records are append-only'); END""",
+    """CREATE TRIGGER idempotency_records_no_delete
+    BEFORE DELETE ON idempotency_records
+    BEGIN SELECT RAISE(ABORT, 'idempotency records are append-only'); END""",
+)
+_MIGRATIONS = {1: _MIGRATION_1, 2: _MIGRATION_2}
 _EXPECTED_SCHEMA_OBJECTS = {
     ("table", "leave_requests"),
     ("table", "audit_events"),
     ("index", "audit_events_request_order"),
     ("trigger", "audit_events_no_update"),
     ("trigger", "audit_events_no_delete"),
+    ("table", "idempotency_records"),
+    ("index", "idempotency_records_request"),
+    ("trigger", "idempotency_records_no_update"),
+    ("trigger", "idempotency_records_no_delete"),
 }
 
 
@@ -118,9 +143,9 @@ class SQLiteLeaveRepository:
 
     @staticmethod
     def _validate_schema(connection: sqlite3.Connection) -> None:
+        placeholders = ", ".join("?" for _ in _EXPECTED_SCHEMA_OBJECTS)
         rows = connection.execute(
-            """SELECT type, name FROM sqlite_master
-            WHERE name IN (?, ?, ?, ?, ?)""",
+            f"SELECT type, name FROM sqlite_master WHERE name IN ({placeholders})",
             tuple(name for _, name in sorted(_EXPECTED_SCHEMA_OBJECTS)),
         ).fetchall()
         actual = {(row["type"], row["name"]) for row in rows}
@@ -150,9 +175,7 @@ class SQLiteLeaveRepository:
     ) -> LeaveRequest:
         """Authorize and atomically persist one typed mutation and its audit event.
 
-        This is an internal Issue #10 boundary. Until Issue #11 wraps it, callers must not expose
-        ``CONFIRM_SUBMIT`` because confirmation matching and idempotent replay are not enforced
-        here. HTTP/UI composition belongs to Issue #12 and must project the returned full record.
+        HTTP/UI composition belongs to Issue #12 and must project the returned full record.
         """
 
         bound = _require_bound_command(command)
@@ -160,6 +183,9 @@ class SQLiteLeaveRepository:
             connection.execute("BEGIN IMMEDIATE")
             current = self._get(connection, bound.request_id)
             authorize_command(manifest, bound.actor, bound.input.command, current)
+            replay = self._idempotent_replay(connection, manifest, bound)
+            if replay is not None:
+                return replay
 
             if isinstance(bound.input, CreateDraftInput):
                 if current is not None:
@@ -182,6 +208,14 @@ class SQLiteLeaveRepository:
                     raise WorkflowError(WorkflowErrorCode.NOT_FOUND)
                 if current.version != bound.input.expected_version:
                     raise WorkflowError(WorkflowErrorCode.VERSION_CONFLICT)
+                if isinstance(
+                    bound.input, ConfirmSubmitInput
+                ) and not bound.input.confirmation.matches(
+                    request_id=current.request_id,
+                    payload=current.payload,
+                    request_version=current.version,
+                ):
+                    raise WorkflowError(WorkflowErrorCode.STALE_CONFIRMATION)
                 previous_status = current.status
                 previous_version = current.version
                 updated = self._apply_existing(current, bound, occurred_at)
@@ -238,7 +272,52 @@ class SQLiteLeaveRepository:
             )
             persisted = self._get(connection, updated.request_id)
             assert persisted is not None
+            connection.execute(
+                """
+                INSERT INTO idempotency_records(
+                    actor_id, operation, idempotency_key, command_fingerprint,
+                    request_id, result_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    bound.actor.identity_id,
+                    bound.input.command,
+                    bound.input.idempotency_key,
+                    command_fingerprint(bound),
+                    persisted.request_id,
+                    persisted.model_dump_json(),
+                    occurred_at.isoformat(),
+                ),
+            )
             return persisted
+
+    def _idempotent_replay(
+        self,
+        connection: sqlite3.Connection,
+        manifest: DemoAccessManifest,
+        command: _CommandContext,
+    ) -> LeaveRequest | None:
+        row = connection.execute(
+            """
+            SELECT command_fingerprint, request_id, result_json
+            FROM idempotency_records
+            WHERE actor_id = ? AND operation = ? AND idempotency_key = ?
+            """,
+            (
+                command.actor.identity_id,
+                command.input.command,
+                command.input.idempotency_key,
+            ),
+        ).fetchone()
+        if row is None:
+            return None
+        stored_request = self._get(connection, row["request_id"])
+        if stored_request is None:
+            raise WorkflowError(WorkflowErrorCode.NOT_FOUND)
+        authorize_replay(manifest, command.actor, stored_request)
+        if row["command_fingerprint"] != command_fingerprint(command):
+            raise WorkflowError(WorkflowErrorCode.IDEMPOTENCY_CONFLICT)
+        return LeaveRequest.model_validate_json(row["result_json"])
 
     @staticmethod
     def _apply_existing(

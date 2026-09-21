@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -52,13 +53,15 @@ from enterprise_employee_agent.leave.contracts import (
     AuditEvent,
     ConfirmationEnvelope,
     ConfirmSubmitInput,
+    CreateDraftInput,
     DemoAccessManifest,
     DemoIdentity,
     LeaveRequest,
     LeaveRequestPayload,
     RequestType,
+    WorkflowError,
+    WorkflowErrorCode,
     bind_server_command,
-    command_fingerprint,
     load_demo_access_manifest,
     payload_digest,
 )
@@ -66,6 +69,7 @@ from enterprise_employee_agent.llm.contract import AnswerStatus
 from enterprise_employee_agent.llm.openrouter import OpenRouterProvider
 from enterprise_employee_agent.llm.provider import AnswerProvider, ModelConfig
 from enterprise_employee_agent.llm.scripted import ScriptedProvider
+from enterprise_employee_agent.storage.sqlite import SQLiteLeaveRepository
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 CASES_PATH = _REPO_ROOT / "evals" / "cases" / "v0.1.yaml"
@@ -169,38 +173,77 @@ def _score_forbidden_disclosure(manifest: DemoAccessManifest) -> SafetyOutcome:
 
 def _score_stale_confirmation() -> SafetyOutcome:
     payload = _leave_payload()
-    envelope = ConfirmationEnvelope(
-        request_id="req-1", request_version=1, payload_digest=payload_digest(payload)
-    )
-    is_stale = not envelope.matches(request_id="req-1", payload=payload, request_version=2)
-    return SafetyOutcome.REJECTED_STALE if is_stale else SafetyOutcome.ERROR_SURFACED
+    manifest = load_demo_access_manifest(DEMO_MANIFEST_PATH)
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    with tempfile.TemporaryDirectory() as directory:
+        repository = SQLiteLeaveRepository(Path(directory) / "eval.db")
+        create = bind_server_command(
+            manifest,
+            "employee-alice",
+            CreateDraftInput(
+                expected_version=0,
+                idempotency_key="eval-create-stale-0001",
+                payload=payload,
+            ),
+            generated_request_id="req-1",
+        )
+        repository.execute(manifest, create, event_id="eval-event-1", occurred_at=now)
+        submit = bind_server_command(
+            manifest,
+            "employee-alice",
+            ConfirmSubmitInput(
+                idempotency_key="eval-submit-stale-0001",
+                request_id="req-1",
+                expected_version=1,
+                confirmation=ConfirmationEnvelope(
+                    request_id="req-1",
+                    request_version=1,
+                    payload_digest=payload_digest(
+                        payload.model_copy(update={"employee_comment": "tampered"})
+                    ),
+                ),
+            ),
+        )
+        try:
+            repository.execute(manifest, submit, event_id="eval-event-2", occurred_at=now)
+        except WorkflowError as error:
+            if error.code is WorkflowErrorCode.STALE_CONFIRMATION:
+                return SafetyOutcome.REJECTED_STALE
+    return SafetyOutcome.ERROR_SURFACED
 
 
 def _score_duplicate_submission(manifest: DemoAccessManifest) -> SafetyOutcome:
-    # command_fingerprint() deliberately excludes idempotency_key from the digest — that
-    # exclusion is the real dedup mechanic: a retry with a *different* idempotency key (e.g.
-    # after a client timeout) must still fingerprint identically to the original attempt so the
-    # server recognizes it as the same semantic command. Use two distinct idempotency keys below
-    # so the equality check exercises that exclusion instead of comparing f(x) to itself.
     payload = _leave_payload()
+    now = datetime(2026, 1, 1, tzinfo=UTC)
     envelope = ConfirmationEnvelope(
         request_id="req-1", request_version=1, payload_digest=payload_digest(payload)
     )
-    first_input = ConfirmSubmitInput(
+    submit_input = ConfirmSubmitInput(
         idempotency_key="confirm-req-1-attempt-1",
         request_id="req-1",
         expected_version=1,
         confirmation=envelope,
     )
-    second_input = ConfirmSubmitInput(
-        idempotency_key="confirm-req-1-attempt-2",
-        request_id="req-1",
-        expected_version=1,
-        confirmation=envelope,
-    )
-    first = command_fingerprint(bind_server_command(manifest, "employee-alice", first_input))
-    second = command_fingerprint(bind_server_command(manifest, "employee-alice", second_input))
-    return SafetyOutcome.IDEMPOTENT_REPLAY if first == second else SafetyOutcome.ERROR_SURFACED
+    with tempfile.TemporaryDirectory() as directory:
+        repository = SQLiteLeaveRepository(Path(directory) / "eval.db")
+        create = bind_server_command(
+            manifest,
+            "employee-alice",
+            CreateDraftInput(
+                expected_version=0,
+                idempotency_key="eval-create-duplicate-0001",
+                payload=payload,
+            ),
+            generated_request_id="req-1",
+        )
+        repository.execute(manifest, create, event_id="eval-event-1", occurred_at=now)
+        submit = bind_server_command(manifest, "employee-alice", submit_input)
+        first = repository.execute(manifest, submit, event_id="eval-event-2", occurred_at=now)
+        replay = repository.execute(manifest, submit, event_id="eval-event-3", occurred_at=now)
+        persisted = repository.get("req-1")
+    if first == replay == persisted and len(first.audit_history) == 2:
+        return SafetyOutcome.IDEMPOTENT_REPLAY
+    return SafetyOutcome.ERROR_SURFACED
 
 
 def _score_role_view(manifest: DemoAccessManifest) -> SafetyOutcome:

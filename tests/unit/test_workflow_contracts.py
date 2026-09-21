@@ -22,15 +22,18 @@ from enterprise_employee_agent.leave.contracts import (
     DemoAccessManifest,
     EmployeeLeaveProjection,
     HrLeaveProjection,
+    LeaveRequest,
     LeaveRequestPayload,
     LeaveStatus,
     ManagerLeaveProjection,
     RequestType,
     StartProcessingInput,
     UpdateDraftInput,
+    WorkflowError,
     WorkflowErrorCode,
     bind_server_command,
     build_audit_event,
+    build_leave_preview,
     command_fingerprint,
     load_demo_access_manifest,
     payload_digest,
@@ -141,6 +144,53 @@ def test_confirmation_binds_normalized_payload_version_and_digest() -> None:
         payload=payload.model_copy(update={"employee_comment": "Changed"}),
         request_version=3,
     )
+
+
+def test_preview_contains_normalized_payload_and_matching_confirmation() -> None:
+    request = LeaveRequest(
+        request_id="leave-alice-001",
+        employee_id="employee-alice",
+        status=LeaveStatus.DRAFT,
+        version=1,
+        payload=LeaveRequestPayload(
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 5),
+            request_type=RequestType.CONTINUOUS,
+            employee_comment="  normalized   comment  ",
+        ),
+        updated_at=datetime(2026, 9, 21, tzinfo=UTC),
+        audit_history=(),
+    )
+
+    preview = build_leave_preview(request)
+
+    assert preview.payload.employee_comment == "normalized comment"
+    assert preview.confirmation.matches(
+        request_id=request.request_id,
+        payload=request.payload,
+        request_version=request.version,
+    )
+
+
+def test_preview_rejects_a_request_that_is_already_submitted() -> None:
+    request = LeaveRequest(
+        request_id="leave-alice-001",
+        employee_id="employee-alice",
+        status=LeaveStatus.SUBMITTED,
+        version=2,
+        payload=LeaveRequestPayload(
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 5),
+            request_type=RequestType.CONTINUOUS,
+        ),
+        updated_at=datetime(2026, 9, 21, tzinfo=UTC),
+        audit_history=(),
+    )
+
+    with pytest.raises(WorkflowError) as excinfo:
+        build_leave_preview(request)
+
+    assert excinfo.value.code is WorkflowErrorCode.INVALID_TRANSITION
 
 
 def test_state_machine_declares_only_v01_transitions() -> None:
