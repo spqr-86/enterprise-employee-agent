@@ -434,6 +434,43 @@ class LeaveRequest(ContractModel):
         return self
 
 
+class LeaveRequestPreview(ContractModel):
+    """Normalized request data and the exact envelope an employee may confirm."""
+
+    request_id: Identifier
+    request_version: int = Field(ge=1)
+    payload: LeaveRequestPayload
+    confirmation: ConfirmationEnvelope
+
+    @model_validator(mode="after")
+    def validate_confirmation(self) -> Self:
+        if not self.confirmation.matches(
+            request_id=self.request_id,
+            payload=self.payload,
+            request_version=self.request_version,
+        ):
+            raise ValueError("preview confirmation does not match its normalized payload")
+        return self
+
+
+def build_leave_preview(request: LeaveRequest) -> LeaveRequestPreview:
+    """Build a confirmable preview only for a draft or clarification response."""
+
+    if request.status not in {LeaveStatus.DRAFT, LeaveStatus.NEEDS_CLARIFICATION}:
+        raise WorkflowError(WorkflowErrorCode.INVALID_TRANSITION)
+    confirmation = ConfirmationEnvelope(
+        request_id=request.request_id,
+        request_version=request.version,
+        payload_digest=payload_digest(request.payload),
+    )
+    return LeaveRequestPreview(
+        request_id=request.request_id,
+        request_version=request.version,
+        payload=request.payload,
+        confirmation=confirmation,
+    )
+
+
 class ManagerLeaveProjection(ContractModel):
     request_id: Identifier
     employee_id: Identifier

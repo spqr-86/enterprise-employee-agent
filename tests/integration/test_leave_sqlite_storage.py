@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -82,8 +83,8 @@ def test_fresh_migration_is_reproducible_and_tracks_version(tmp_path: Path) -> N
     first = SQLiteLeaveRepository(database)
     second = SQLiteLeaveRepository(database)
 
-    assert first.schema_version() == 1
-    assert second.schema_version() == 1
+    assert first.schema_version() == 2
+    assert second.schema_version() == 2
 
 
 def test_recorded_migration_rejects_a_partial_schema(tmp_path: Path) -> None:
@@ -288,6 +289,262 @@ def test_stale_version_and_unauthorized_command_do_not_write(repository, manifes
     assert repository.get(bob.request_id) == bob
 
 
+def test_confirm_submit_rejects_tampered_payload_digest_without_writing(
+    repository, manifest
+) -> None:
+    original = _create(repository, manifest)
+    command = _command(
+        manifest,
+        "employee-alice",
+        ConfirmSubmitInput(
+            request_id=original.request_id,
+            expected_version=original.version,
+            idempotency_key="submit-alice-tampered-0001",
+            confirmation=ConfirmationEnvelope(
+                request_id=original.request_id,
+                request_version=original.version,
+                payload_digest=payload_digest(_payload(comment="Different payload")),
+            ),
+        ),
+    )
+
+    with pytest.raises(WorkflowError) as excinfo:
+        repository.execute(
+            manifest, command, event_id="event-0002", occurred_at=NOW + timedelta(minutes=1)
+        )
+
+    assert excinfo.value.code is WorkflowErrorCode.STALE_CONFIRMATION
+    assert repository.get(original.request_id) == original
+
+
+def test_confirm_submit_rejects_preview_invalidated_by_persisted_edit(repository, manifest) -> None:
+    original = _create(repository, manifest)
+    stale_confirmation = ConfirmationEnvelope(
+        request_id=original.request_id,
+        request_version=original.version,
+        payload_digest=payload_digest(original.payload),
+    )
+    updated = repository.execute(
+        manifest,
+        _command(
+            manifest,
+            "employee-alice",
+            UpdateDraftInput(
+                request_id=original.request_id,
+                expected_version=original.version,
+                idempotency_key="update-alice-before-submit-0001",
+                payload=_payload(comment="Edited after preview"),
+            ),
+        ),
+        event_id="event-0002",
+        occurred_at=NOW + timedelta(minutes=1),
+    )
+    submit = _command(
+        manifest,
+        "employee-alice",
+        ConfirmSubmitInput(
+            request_id=original.request_id,
+            expected_version=original.version,
+            idempotency_key="submit-alice-stale-preview-0001",
+            confirmation=stale_confirmation,
+        ),
+    )
+
+    with pytest.raises(WorkflowError) as excinfo:
+        repository.execute(
+            manifest, submit, event_id="event-0003", occurred_at=NOW + timedelta(minutes=2)
+        )
+
+    assert excinfo.value.code is WorkflowErrorCode.STALE_CONFIRMATION
+    assert repository.get(original.request_id) == updated
+
+
+def test_same_idempotency_scope_replays_original_result_without_an_event(
+    repository, manifest
+) -> None:
+    original = _create(repository, manifest)
+    command = _command(
+        manifest,
+        "employee-alice",
+        UpdateDraftInput(
+            request_id=original.request_id,
+            expected_version=1,
+            idempotency_key="update-alice-retry-0001",
+            payload=_payload(comment="One update"),
+        ),
+    )
+    first = repository.execute(
+        manifest, command, event_id="event-0002", occurred_at=NOW + timedelta(minutes=1)
+    )
+    replay = repository.execute(
+        manifest, command, event_id="unused-replay-event", occurred_at=NOW + timedelta(minutes=2)
+    )
+
+    assert replay == first
+    assert repository.get(original.request_id) == first
+    assert len(first.audit_history) == 2
+
+
+def test_same_idempotency_scope_with_different_payload_conflicts(repository, manifest) -> None:
+    original = _create(repository, manifest)
+    first = _command(
+        manifest,
+        "employee-alice",
+        UpdateDraftInput(
+            request_id=original.request_id,
+            expected_version=1,
+            idempotency_key="update-alice-conflict-0001",
+            payload=_payload(comment="First payload"),
+        ),
+    )
+    persisted = repository.execute(
+        manifest, first, event_id="event-0002", occurred_at=NOW + timedelta(minutes=1)
+    )
+    conflicting = _command(
+        manifest,
+        "employee-alice",
+        UpdateDraftInput(
+            request_id=original.request_id,
+            expected_version=1,
+            idempotency_key="update-alice-conflict-0001",
+            payload=_payload(comment="Changed payload"),
+        ),
+    )
+
+    with pytest.raises(WorkflowError) as excinfo:
+        repository.execute(
+            manifest,
+            conflicting,
+            event_id="event-0003",
+            occurred_at=NOW + timedelta(minutes=2),
+        )
+
+    assert excinfo.value.code is WorkflowErrorCode.IDEMPOTENCY_CONFLICT
+    assert repository.get(original.request_id) == persisted
+
+
+def test_concurrent_duplicate_submission_has_one_transition(repository, manifest) -> None:
+    original = _create(repository, manifest)
+    command = _command(
+        manifest,
+        "employee-alice",
+        ConfirmSubmitInput(
+            request_id=original.request_id,
+            expected_version=1,
+            idempotency_key="submit-alice-concurrent-0001",
+            confirmation=ConfirmationEnvelope(
+                request_id=original.request_id,
+                request_version=1,
+                payload_digest=payload_digest(original.payload),
+            ),
+        ),
+    )
+
+    def execute(event_id: str):
+        return repository.execute(
+            manifest, command, event_id=event_id, occurred_at=NOW + timedelta(minutes=1)
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = tuple(pool.map(execute, ("event-submit-a", "event-submit-b")))
+
+    assert results[0] == results[1]
+    persisted = repository.get(original.request_id)
+    assert persisted is not None
+    assert persisted.status is LeaveStatus.SUBMITTED
+    assert persisted.version == 2
+    assert len(persisted.audit_history) == 2
+
+
+def test_replay_is_reauthorized_against_current_ownership(repository, manifest) -> None:
+    original = _create(repository, manifest)
+    command = _command(
+        manifest,
+        "employee-alice",
+        UpdateDraftInput(
+            request_id=original.request_id,
+            expected_version=1,
+            idempotency_key="update-alice-reauth-0001",
+            payload=_payload(comment="Stored result"),
+        ),
+    )
+    repository.execute(
+        manifest, command, event_id="event-0002", occurred_at=NOW + timedelta(minutes=1)
+    )
+    with sqlite3.connect(repository.database_path) as connection:
+        connection.execute(
+            "UPDATE leave_requests SET employee_id = ? WHERE request_id = ?",
+            ("employee-bob", original.request_id),
+        )
+
+    with pytest.raises(WorkflowError) as excinfo:
+        repository.execute(
+            manifest, command, event_id="unused-event", occurred_at=NOW + timedelta(minutes=2)
+        )
+
+    assert excinfo.value.code is WorkflowErrorCode.NOT_FOUND
+
+
+def test_idempotency_key_is_scoped_by_actor_and_operation(repository, manifest) -> None:
+    alice = _create(repository, manifest)
+    bob = _create(
+        repository,
+        manifest,
+        request_id="leave-bob-001",
+        actor_id="employee-bob",
+        event_id="event-bob-0001",
+    )
+    shared_key = "shared-scope-key-0001"
+    alice_updated = repository.execute(
+        manifest,
+        _command(
+            manifest,
+            "employee-alice",
+            UpdateDraftInput(
+                request_id=alice.request_id,
+                expected_version=1,
+                idempotency_key=shared_key,
+                payload=_payload(comment="Alice update"),
+            ),
+        ),
+        event_id="event-alice-0002",
+        occurred_at=NOW + timedelta(minutes=1),
+    )
+    bob_updated = repository.execute(
+        manifest,
+        _command(
+            manifest,
+            "employee-bob",
+            UpdateDraftInput(
+                request_id=bob.request_id,
+                expected_version=1,
+                idempotency_key=shared_key,
+                payload=_payload(comment="Bob update"),
+            ),
+        ),
+        event_id="event-bob-0002",
+        occurred_at=NOW + timedelta(minutes=1),
+    )
+    cancelled = repository.execute(
+        manifest,
+        _command(
+            manifest,
+            "employee-alice",
+            CancelDraftInput(
+                request_id=alice.request_id,
+                expected_version=2,
+                idempotency_key=shared_key,
+            ),
+        ),
+        event_id="event-alice-0003",
+        occurred_at=NOW + timedelta(minutes=2),
+    )
+
+    assert alice_updated.payload.employee_comment == "Alice update"
+    assert bob_updated.payload.employee_comment == "Bob update"
+    assert cancelled.status is LeaveStatus.CANCELLED
+
+
 def test_audit_insert_failure_rolls_back_request_mutation(repository, manifest) -> None:
     original = _create(repository, manifest)
     with sqlite3.connect(repository.database_path) as connection:
@@ -309,6 +566,34 @@ def test_audit_insert_failure_rolls_back_request_mutation(repository, manifest) 
         ),
     )
     with pytest.raises(sqlite3.IntegrityError, match="forced audit failure"):
+        repository.execute(
+            manifest, command, event_id="event-0002", occurred_at=NOW + timedelta(minutes=1)
+        )
+
+    assert repository.get(original.request_id) == original
+
+
+def test_idempotency_insert_failure_rolls_back_request_and_audit(repository, manifest) -> None:
+    original = _create(repository, manifest)
+    with sqlite3.connect(repository.database_path) as connection:
+        connection.execute(
+            """
+            CREATE TRIGGER fail_idempotency BEFORE INSERT ON idempotency_records
+            BEGIN SELECT RAISE(ABORT, 'forced idempotency failure'); END
+            """
+        )
+
+    command = _command(
+        manifest,
+        "employee-alice",
+        UpdateDraftInput(
+            request_id=original.request_id,
+            expected_version=1,
+            idempotency_key="update-rollback-0001",
+            payload=_payload(comment="Must roll back with its audit event"),
+        ),
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="forced idempotency failure"):
         repository.execute(
             manifest, command, event_id="event-0002", occurred_at=NOW + timedelta(minutes=1)
         )

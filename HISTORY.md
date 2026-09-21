@@ -269,3 +269,14 @@
   exceptions and unclosed connections are unsafe under a live server (→ Issue #14, before FastAPI
   is wired up). PR #26 squash-merged to `main` (`97a29ab`), Issue #10 closed, `main` re-verified
   (279/279 tests).
+- 2026-09-21: Groomed Issue #11 with the carried D1/D3 authorization decisions and the blocking
+  digest-validation finding from #10, then implemented it on
+  `feat/11-confirmation-idempotency` (`448f388`). Added a normalized confirmable preview,
+  stored-payload digest validation (`STALE_CONFIRMATION`), SQLite schema v2 idempotency records
+  scoped by actor+operation+key, authorized replay of the original result, conflict rejection,
+  and atomic request+audit+result commits. Integration coverage includes tampered confirmation,
+  replay/conflict, actor/operation scoping, ownership change, rollback after result-write failure,
+  and a concurrent double-submit with one transition/event. The offline stale/duplicate eval
+  cases now exercise the real SQLite command path instead of contract/fingerprint stand-ins.
+  Local evidence: 288 tests, smoke 2/2, Ruff/format and diff-check pass. Branch is pushed; next:
+  open PR, run independent QA on `448f388`, record owner acceptance, merge, and verify `main`.
