@@ -217,3 +217,26 @@
   to Ready with owner decisions: pure policy functions called by #10/#11 (D1), in-memory
   `LeaveRequest` defined in #9 and persisted by #10 (D2), out-of-scope request access returns
   `not_found` and `forbidden` is reserved for commands a role never has (D3).
+- 2026-09-21: Implemented Issue #9 (authorization and role-specific projections) with TDD on
+  `feat/9-authorization-role-projections`: new `leave/access_policy.py` (`resolve_identity`,
+  `can_view`, `visible_requests`, `authorize_command`, `authorize_replay`,
+  `authorize_audit_history`, `project_for`), a new immutable `LeaveRequest` entity and
+  `WorkflowError` in `leave/contracts.py`, and `retrieval.retrieve_for_identity` as the new
+  authorized retrieval entry point. Rewired the offline eval's `role_view`, `forbidden_disclosure`,
+  and `forbidden_document` safety cases to exercise the real policy instead of hand-built
+  projections. First independent review (code-reviewer agent) found two blockers: (1) every
+  policy function trusted any hand-built `DemoIdentity` without checking it against the manifest
+  — a forged identity got another employee's HR projection and could run an HR command; (2)
+  `answer_question` still called `retrieve()` by bare role, so `retrieve_for_identity` was only
+  exercised in the eval scorer, not on the production path (AC-4 not actually met). Fixed both:
+  `_verify_bound()` now gates every policy entry point, and `answer_question`'s public parameter
+  changed from `role: ActorRole` to `identity: DemoIdentity` (all callers updated). Also
+  strengthened `_score_role_view` (exact `ROLE_PROJECTION_FIELDS` key set per role) and
+  `_score_forbidden_disclosure` (asserts a real secret string is absent from serialized JSON,
+  not just `hasattr`). Second independent review: APPROVE, both blockers verified closed, no new
+  blocker. PR #24 squash-merged to `main` (980b2c6), Issue #9 closed; 256/256 tests, ruff/format
+  clean, offline eval 8/8 knowledge + 7/7 safety. Non-blocking follow-ups filed as Issue #25:
+  verify identity at the retrieval boundary once #10/#12 add a real entry point, derive
+  `EVAL_IDENTITY`/`EVAL_ROLE` from the manifest instead of duplicating it, and a
+  `LeaveRequest.employee_id` role invariant. Next: Issue #10 (persistence) / #11 (confirmation,
+  idempotency), calling `access_policy` rather than re-deriving access (D1/D2).
