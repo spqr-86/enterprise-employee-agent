@@ -118,6 +118,14 @@ ERROR_MESSAGES: dict[WorkflowErrorCode, str] = {
 }
 
 
+class WorkflowError(Exception):
+    """A stable workflow error code with its safe, non-leaking message."""
+
+    def __init__(self, code: WorkflowErrorCode) -> None:
+        self.code = code
+        super().__init__(ERROR_MESSAGES[code])
+
+
 class LeaveRequestPayload(ContractModel):
     start_date: date
     end_date: date
@@ -392,6 +400,37 @@ class AuditEvent(ContractModel):
             raise ValueError("create_draft audit must record version 0 to 1")
         if self.command is not CommandName.CREATE_DRAFT and self.previous_version < 1:
             raise ValueError("non-create audit must start from a positive version")
+        return self
+
+
+class LeaveRequest(ContractModel):
+    """The internal, immutable in-memory record a policy and projection are built from.
+
+    D2 (Issue #9): this entity's fields are owned here; later persistence (#10) stores it
+    without changing its shape.
+    """
+
+    request_id: Identifier
+    employee_id: Identifier
+    status: LeaveStatus
+    version: int = Field(ge=1)
+    payload: LeaveRequestPayload
+    clarification_question: str | None = Field(default=None, max_length=500)
+    updated_at: AwareDatetime
+    audit_history: tuple[AuditEvent, ...]
+
+    @field_validator("clarification_question", mode="before")
+    @classmethod
+    def normalize_clarification_question(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        normalized = " ".join(value.split())
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_audit_history(self) -> Self:
+        if any(event.request_id != self.request_id for event in self.audit_history):
+            raise ValueError("audit_history may contain only this request's events")
         return self
 
 

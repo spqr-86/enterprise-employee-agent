@@ -56,6 +56,15 @@ contract. A valid fixture has unique identifiers, at least two employees, at lea
 and at least one HR identity; every employee reports to a declared manager, while manager and HR
 identities do not declare `reports_to`. All three typed negative-case categories are mandatory.
 
+`enterprise_employee_agent.leave.access_policy` is the only module that decides this (D1):
+`resolve_identity` is the sole way to obtain an actor, `can_view`/`visible_requests` decide scope,
+`authorize_command`/`authorize_replay`/`authorize_audit_history` gate mutations, replay and audit
+reads, and `project_for` builds the typed projection after authorization. Per D3, a command the
+actor's role never has at all (manager mutation, an employee HR command) is `forbidden`; a
+request that exists but is outside the actor's scope (another employee's request, a non-report's
+request) is `not_found`, indistinguishable from a missing request, for view, command, replay, and
+audit-history access alike.
+
 ## Commands
 
 Every mutation first validates a command-specific client input. Existing-request inputs contain

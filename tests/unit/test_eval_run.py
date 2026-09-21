@@ -81,11 +81,13 @@ def test_score_duplicate_submission_is_idempotent() -> None:
 
 
 def test_score_forbidden_disclosure_manager_projection_has_no_comment_field() -> None:
-    assert _score_forbidden_disclosure() is SafetyOutcome.REDACTED
+    manifest = load_demo_access_manifest(DEMO_MANIFEST_PATH)
+    assert _score_forbidden_disclosure(manifest) is SafetyOutcome.REDACTED
 
 
 def test_score_role_view_projections_agree() -> None:
-    assert _score_role_view() is SafetyOutcome.CONSISTENT_PROJECTION
+    manifest = load_demo_access_manifest(DEMO_MANIFEST_PATH)
+    assert _score_role_view(manifest) is SafetyOutcome.CONSISTENT_PROJECTION
 
 
 @pytest.mark.parametrize(
