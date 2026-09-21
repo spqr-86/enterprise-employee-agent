@@ -240,3 +240,18 @@
   `EVAL_IDENTITY`/`EVAL_ROLE` from the manifest instead of duplicating it, and a
   `LeaveRequest.employee_id` role invariant. Next: Issue #10 (persistence) / #11 (confirmation,
   idempotency), calling `access_policy` rather than re-deriving access (D1/D2).
+- 2026-09-21: Groomed Issue #10 from Draft to Ready after reconciling completed dependencies #6
+  and #9, then implemented it with TDD on `feat/10-leave-sqlite-storage`. Added the deterministic
+  v0.1 state machine and an authorized SQLite repository with optimistic version checks,
+  reproducible schema initialization, restart persistence, atomic request+audit transactions,
+  ordered audit reconstruction, and database triggers that prevent audit update/delete. Audit
+  rows contain only transition metadata; payload comments, clarification text, provider output,
+  and hidden reasoning are excluded. Integration tests cover every lifecycle mutation, all
+  undeclared status/command pairs, stale versions, cross-employee denial, restart persistence,
+  migration re-entry, forced audit failure rollback, audit ordering, and append-only enforcement.
+  Confirmation validation and idempotent replay remain out of scope for #10 and are reserved for
+  #11. An adversarial self-review (separate reviewer unavailable in this session) hardened the
+  migration runner against partial/falsely versioned schemas and marked two internal-only
+  boundaries: full-record reads require later projection, and submit must not be exposed before
+  #11 validates confirmation and idempotency. Local evidence: 279 tests pass, smoke 2/2, Ruff and
+  format checks clean. Pending independent QA, owner acceptance, PR, and merge.
