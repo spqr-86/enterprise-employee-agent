@@ -11,24 +11,22 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 
 from enterprise_employee_agent.leave.contracts import (
     COMMAND_SPECS,
+    IDENTIFIER_ADAPTER,
     ActorRole,
     CommandName,
     DemoAccessManifest,
     DemoIdentity,
     EmployeeLeaveProjection,
     HrLeaveProjection,
-    Identifier,
     LeaveRequest,
     ManagerLeaveProjection,
     WorkflowError,
     WorkflowErrorCode,
 )
-
-_IDENTIFIER_ADAPTER = TypeAdapter(Identifier)
 
 type LeaveProjection = EmployeeLeaveProjection | ManagerLeaveProjection | HrLeaveProjection
 
@@ -36,7 +34,7 @@ type LeaveProjection = EmployeeLeaveProjection | ManagerLeaveProjection | HrLeav
 def resolve_identity(manifest: DemoAccessManifest, actor_id: str) -> DemoIdentity:
     """The only way to obtain an actor: server-selected, never client- or model-supplied."""
     try:
-        validated_id = _IDENTIFIER_ADAPTER.validate_python(actor_id)
+        validated_id = IDENTIFIER_ADAPTER.validate_python(actor_id)
     except ValidationError as error:
         raise WorkflowError(WorkflowErrorCode.UNAUTHORIZED) from error
     identity = _find_identity(manifest, validated_id)
@@ -52,8 +50,21 @@ def _find_identity(manifest: DemoAccessManifest, identity_id: str) -> DemoIdenti
     )
 
 
+def _verify_bound(manifest: DemoAccessManifest, actor: DemoIdentity) -> None:
+    """Reject an actor object that was not returned by resolve_identity for this manifest.
+
+    Every entry point below is reachable with a hand-built ``DemoIdentity`` (it is a plain
+    pydantic model, not the opaque, token-gated ``_CommandContext``), so without this check a
+    caller could hand in e.g. ``DemoIdentity(identity_id="employee-alice", role=ActorRole.HR)``
+    and get an HR view or HR command over someone else's request.
+    """
+    if _find_identity(manifest, actor.identity_id) != actor:
+        raise WorkflowError(WorkflowErrorCode.UNAUTHORIZED)
+
+
 def can_view(manifest: DemoAccessManifest, actor: DemoIdentity, request: LeaveRequest) -> bool:
     """Whether ``actor`` may view ``request`` at all, independent of any specific command."""
+    _verify_bound(manifest, actor)
     if actor.role is ActorRole.EMPLOYEE:
         return actor.identity_id == request.employee_id
     if actor.role is ActorRole.MANAGER:
@@ -78,6 +89,7 @@ def authorize_command(
     request: LeaveRequest | None,
 ) -> None:
     """Authorize a command. Forbidden if the role never has it; not_found if out of scope (D3)."""
+    _verify_bound(manifest, actor)
     if actor.role not in COMMAND_SPECS[command].allowed_roles:
         raise WorkflowError(WorkflowErrorCode.FORBIDDEN)
     if command is CommandName.CREATE_DRAFT:
@@ -89,7 +101,12 @@ def authorize_command(
 def authorize_replay(
     manifest: DemoAccessManifest, actor: DemoIdentity, stored_request: LeaveRequest
 ) -> None:
-    """Deny replaying a stored idempotent result to anyone who could not view it live."""
+    """Deny replaying a stored idempotent result to anyone who could not view it live.
+
+    Scope-based, like ``can_view``: HR may replay any request, not only the original caller's.
+    That matches HR's view scope (``all``) and D1 (no separate replay-specific rule); tightening
+    replay to the original actor is a decision for #11, which owns the idempotency lookup.
+    """
     if not can_view(manifest, actor, stored_request):
         raise WorkflowError(WorkflowErrorCode.NOT_FOUND)
 

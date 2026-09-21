@@ -95,9 +95,15 @@ def test_retrieve_for_identity_filters_by_the_identitys_role() -> None:
     employee = DemoIdentity(
         identity_id="employee-alice", display_name="Alice", role=ActorRole.EMPLOYEE
     )
+    manager = DemoIdentity(
+        identity_id="manager-morgan", display_name="Morgan", role=ActorRole.MANAGER
+    )
     hr = DemoIdentity(identity_id="hr-harper", display_name="Harper", role=ActorRole.HR)
     question = "confidential leave investigations"
     assert [r.document_id for r in retrieve_for_identity(question, employee, access_map)] == [
+        "public"
+    ]
+    assert [r.document_id for r in retrieve_for_identity(question, manager, access_map)] == [
         "public"
     ]
     assert retrieve_for_identity(question, hr, access_map)[0].document_id == "secret"

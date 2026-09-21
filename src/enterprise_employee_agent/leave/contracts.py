@@ -266,7 +266,7 @@ COMMAND_SPECS: dict[CommandName, CommandSpec] = {
 
 
 _BINDING_TOKEN = object()
-_IDENTIFIER_ADAPTER = TypeAdapter(Identifier)
+IDENTIFIER_ADAPTER = TypeAdapter(Identifier)
 
 
 @dataclass(frozen=True, slots=True)
@@ -625,7 +625,7 @@ def bind_server_command(
 ) -> _CommandContext:
     """Bind validated client intent to an identity selected by the server."""
 
-    validated_actor_id = _IDENTIFIER_ADAPTER.validate_python(actor_id)
+    validated_actor_id = IDENTIFIER_ADAPTER.validate_python(actor_id)
     identity = next(
         (
             candidate
@@ -639,7 +639,7 @@ def bind_server_command(
     if isinstance(input, CreateDraftInput):
         if generated_request_id is None:
             raise ValueError("create_draft requires a server-generated request_id")
-        request_id = _IDENTIFIER_ADAPTER.validate_python(generated_request_id)
+        request_id = IDENTIFIER_ADAPTER.validate_python(generated_request_id)
     else:
         if generated_request_id is not None:
             raise ValueError("only create_draft accepts a generated request_id")

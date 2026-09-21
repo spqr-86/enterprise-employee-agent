@@ -7,7 +7,6 @@ import pytest
 from pydantic import ValidationError
 
 from enterprise_employee_agent.leave.access_policy import (
-    LeaveRequest,
     authorize_audit_history,
     authorize_command,
     authorize_replay,
@@ -17,11 +16,14 @@ from enterprise_employee_agent.leave.access_policy import (
     visible_requests,
 )
 from enterprise_employee_agent.leave.contracts import (
+    COMMAND_SPECS,
     ActorRole,
     AuditEvent,
     CommandName,
+    DemoIdentity,
     EmployeeLeaveProjection,
     HrLeaveProjection,
+    LeaveRequest,
     LeaveRequestPayload,
     ManagerLeaveProjection,
     RequestType,
@@ -232,6 +234,23 @@ def test_authorize_replay_denies_the_same_actors_as_can_view(manifest) -> None:
     assert excinfo.value.code is WorkflowErrorCode.NOT_FOUND
 
 
+def test_authorize_replay_allows_the_owner_employee(manifest) -> None:
+    alice = resolve_identity(manifest, "employee-alice")
+    authorize_replay(manifest, alice, _request(employee_id="employee-alice"))
+
+
+def test_authorize_replay_allows_hr_for_any_request(manifest) -> None:
+    harper = resolve_identity(manifest, "hr-harper")
+    authorize_replay(manifest, harper, _request(employee_id="employee-carol"))
+
+
+def test_authorize_replay_denies_a_non_report_manager(manifest) -> None:
+    riley = resolve_identity(manifest, "manager-riley")
+    with pytest.raises(WorkflowError) as excinfo:
+        authorize_replay(manifest, riley, _request(employee_id="employee-alice"))
+    assert excinfo.value.code is WorkflowErrorCode.NOT_FOUND
+
+
 def test_authorize_audit_history_forbidden_for_non_hr(manifest) -> None:
     morgan = resolve_identity(manifest, "manager-morgan")
     with pytest.raises(WorkflowError) as excinfo:
@@ -316,6 +335,29 @@ def test_project_for_non_report_manager_returns_not_found(manifest) -> None:
 # --- full actor x request-owner x action matrix from the demo manifest (AC-6) --
 
 
+def test_can_view_rejects_a_forged_identity_not_bound_to_the_manifest(manifest) -> None:
+    forged_hr = DemoIdentity(identity_id="employee-alice", display_name="Alice", role=ActorRole.HR)
+    with pytest.raises(WorkflowError) as excinfo:
+        can_view(manifest, forged_hr, _request(employee_id="employee-bob"))
+    assert excinfo.value.code is WorkflowErrorCode.UNAUTHORIZED
+
+
+def test_project_for_rejects_a_forged_identity(manifest) -> None:
+    forged_hr = DemoIdentity(identity_id="employee-alice", display_name="Alice", role=ActorRole.HR)
+    with pytest.raises(WorkflowError) as excinfo:
+        project_for(manifest, forged_hr, _request(employee_id="employee-bob"))
+    assert excinfo.value.code is WorkflowErrorCode.UNAUTHORIZED
+
+
+def test_authorize_command_rejects_a_forged_identity(manifest) -> None:
+    forged_hr = DemoIdentity(identity_id="employee-alice", display_name="Alice", role=ActorRole.HR)
+    with pytest.raises(WorkflowError) as excinfo:
+        authorize_command(
+            manifest, forged_hr, CommandName.START_PROCESSING, _request(employee_id="employee-bob")
+        )
+    assert excinfo.value.code is WorkflowErrorCode.UNAUTHORIZED
+
+
 def test_full_actor_matrix_matches_can_view_expectations(manifest) -> None:
     employees = ["employee-alice", "employee-bob", "employee-carol"]
     actors = [i.identity_id for i in manifest.identities]
@@ -332,3 +374,37 @@ def test_full_actor_matrix_matches_can_view_expectations(manifest) -> None:
             else:
                 expected = True
             assert visible is expected, (actor_id, owner_id)
+
+
+def test_full_actor_matrix_matches_authorize_command_expectations(manifest) -> None:
+    employees = ["employee-alice", "employee-bob", "employee-carol"]
+    reports_to = {i.identity_id: i.reports_to for i in manifest.identities}
+    actors = [i.identity_id for i in manifest.identities]
+    commands = list(CommandName)
+    for actor_id in actors:
+        actor = resolve_identity(manifest, actor_id)
+        for owner_id in employees:
+            request = _request(employee_id=owner_id)
+            for command in commands:
+                role_has_command = actor.role in COMMAND_SPECS[command].allowed_roles
+                is_owner = actor_id == owner_id
+                owns_via_scope = (
+                    is_owner
+                    if actor.role is ActorRole.EMPLOYEE
+                    else reports_to[owner_id] == actor_id
+                    if actor.role is ActorRole.MANAGER
+                    else True
+                )
+                try:
+                    authorize_command(manifest, actor, command, request)
+                    outcome = "allowed"
+                except WorkflowError as error:
+                    outcome = error.code.value
+                if not role_has_command:
+                    assert outcome == "forbidden", (actor_id, owner_id, command)
+                elif command is CommandName.CREATE_DRAFT:
+                    assert outcome == "allowed", (actor_id, owner_id, command)
+                elif not owns_via_scope:
+                    assert outcome == "not_found", (actor_id, owner_id, command)
+                else:
+                    assert outcome == "allowed", (actor_id, owner_id, command)

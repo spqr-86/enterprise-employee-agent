@@ -21,8 +21,12 @@ from enum import StrEnum
 from importlib import resources
 
 from enterprise_employee_agent.knowledge.access import DocumentAccessMap
-from enterprise_employee_agent.knowledge.retrieval import DEFAULT_K, RetrievedDocument, retrieve
-from enterprise_employee_agent.leave.contracts import ActorRole
+from enterprise_employee_agent.knowledge.retrieval import (
+    DEFAULT_K,
+    RetrievedDocument,
+    retrieve_for_identity,
+)
+from enterprise_employee_agent.leave.contracts import DemoIdentity
 from enterprise_employee_agent.llm.contract import (
     AnswerContract,
     AnswerStatus,
@@ -109,7 +113,7 @@ class PipelineOutcome:
 def answer_question(
     question: str,
     *,
-    role: ActorRole,
+    identity: DemoIdentity,
     access_map: DocumentAccessMap,
     provider: AnswerProvider,
     model: ModelConfig,
@@ -118,7 +122,7 @@ def answer_question(
     before_call: Callable[[AnswerRequest], None] | None = None,
 ) -> PipelineOutcome:
     prompt = prompt if prompt is not None else load_prompt()
-    retrieved = retrieve(question, role, access_map, k=k)
+    retrieved = retrieve_for_identity(question, identity, access_map, k=k)
     retrieved_ids = tuple(item.document_id for item in retrieved)
     if not retrieved:
         return PipelineOutcome(kind=OutcomeKind.NO_EVIDENCE, retrieved_ids=())
