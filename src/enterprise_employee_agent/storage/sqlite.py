@@ -206,8 +206,6 @@ class SQLiteLeaveRepository:
             else:
                 if current is None:
                     raise WorkflowError(WorkflowErrorCode.NOT_FOUND)
-                if current.version != bound.input.expected_version:
-                    raise WorkflowError(WorkflowErrorCode.VERSION_CONFLICT)
                 if isinstance(
                     bound.input, ConfirmSubmitInput
                 ) and not bound.input.confirmation.matches(
@@ -216,6 +214,8 @@ class SQLiteLeaveRepository:
                     request_version=current.version,
                 ):
                     raise WorkflowError(WorkflowErrorCode.STALE_CONFIRMATION)
+                if current.version != bound.input.expected_version:
+                    raise WorkflowError(WorkflowErrorCode.VERSION_CONFLICT)
                 previous_status = current.status
                 previous_version = current.version
                 updated = self._apply_existing(current, bound, occurred_at)

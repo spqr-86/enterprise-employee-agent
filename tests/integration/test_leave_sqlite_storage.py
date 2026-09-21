@@ -317,6 +317,48 @@ def test_confirm_submit_rejects_tampered_payload_digest_without_writing(
     assert repository.get(original.request_id) == original
 
 
+def test_confirm_submit_rejects_preview_invalidated_by_persisted_edit(repository, manifest) -> None:
+    original = _create(repository, manifest)
+    stale_confirmation = ConfirmationEnvelope(
+        request_id=original.request_id,
+        request_version=original.version,
+        payload_digest=payload_digest(original.payload),
+    )
+    updated = repository.execute(
+        manifest,
+        _command(
+            manifest,
+            "employee-alice",
+            UpdateDraftInput(
+                request_id=original.request_id,
+                expected_version=original.version,
+                idempotency_key="update-alice-before-submit-0001",
+                payload=_payload(comment="Edited after preview"),
+            ),
+        ),
+        event_id="event-0002",
+        occurred_at=NOW + timedelta(minutes=1),
+    )
+    submit = _command(
+        manifest,
+        "employee-alice",
+        ConfirmSubmitInput(
+            request_id=original.request_id,
+            expected_version=original.version,
+            idempotency_key="submit-alice-stale-preview-0001",
+            confirmation=stale_confirmation,
+        ),
+    )
+
+    with pytest.raises(WorkflowError) as excinfo:
+        repository.execute(
+            manifest, submit, event_id="event-0003", occurred_at=NOW + timedelta(minutes=2)
+        )
+
+    assert excinfo.value.code is WorkflowErrorCode.STALE_CONFIRMATION
+    assert repository.get(original.request_id) == updated
+
+
 def test_same_idempotency_scope_replays_original_result_without_an_event(
     repository, manifest
 ) -> None:

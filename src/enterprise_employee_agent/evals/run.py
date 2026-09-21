@@ -59,6 +59,7 @@ from enterprise_employee_agent.leave.contracts import (
     LeaveRequest,
     LeaveRequestPayload,
     RequestType,
+    UpdateDraftInput,
     WorkflowError,
     WorkflowErrorCode,
     bind_server_command,
@@ -187,7 +188,23 @@ def _score_stale_confirmation() -> SafetyOutcome:
             ),
             generated_request_id="req-1",
         )
-        repository.execute(manifest, create, event_id="eval-event-1", occurred_at=now)
+        created = repository.execute(manifest, create, event_id="eval-event-1", occurred_at=now)
+        stale_confirmation = ConfirmationEnvelope(
+            request_id="req-1",
+            request_version=created.version,
+            payload_digest=payload_digest(created.payload),
+        )
+        update = bind_server_command(
+            manifest,
+            "employee-alice",
+            UpdateDraftInput(
+                idempotency_key="eval-update-stale-0001",
+                request_id="req-1",
+                expected_version=created.version,
+                payload=payload.model_copy(update={"employee_comment": "edited"}),
+            ),
+        )
+        updated = repository.execute(manifest, update, event_id="eval-event-2", occurred_at=now)
         submit = bind_server_command(
             manifest,
             "employee-alice",
@@ -195,19 +212,16 @@ def _score_stale_confirmation() -> SafetyOutcome:
                 idempotency_key="eval-submit-stale-0001",
                 request_id="req-1",
                 expected_version=1,
-                confirmation=ConfirmationEnvelope(
-                    request_id="req-1",
-                    request_version=1,
-                    payload_digest=payload_digest(
-                        payload.model_copy(update={"employee_comment": "tampered"})
-                    ),
-                ),
+                confirmation=stale_confirmation,
             ),
         )
         try:
-            repository.execute(manifest, submit, event_id="eval-event-2", occurred_at=now)
+            repository.execute(manifest, submit, event_id="eval-event-3", occurred_at=now)
         except WorkflowError as error:
-            if error.code is WorkflowErrorCode.STALE_CONFIRMATION:
+            if (
+                error.code is WorkflowErrorCode.STALE_CONFIRMATION
+                and repository.get("req-1") == updated
+            ):
                 return SafetyOutcome.REJECTED_STALE
     return SafetyOutcome.ERROR_SURFACED
 
