@@ -255,3 +255,17 @@
   boundaries: full-record reads require later projection, and submit must not be exposed before
   #11 validates confirmation and idempotency. Local evidence: 279 tests pass, smoke 2/2, Ruff and
   format checks clean. Pending independent QA, owner acceptance, PR, and merge.
+- 2026-09-21: Independent QA reviewed PR #26 (Issue #10) with adversarial probes rather than
+  reading tests only: killed the process between the request UPDATE and the audit INSERT (no
+  orphan row on either side), raced two processes on the same optimistic-version write (loser
+  got `VERSION_CONFLICT`, no lost update), confirmed the append-only triggers and reproducible
+  restart persistence. Verdict PASS. Filed five non-blocking findings as acceptance criteria
+  instead of patching in-branch: `CONFIRM_SUBMIT` does not validate `payload_digest` against the
+  stored payload (→ Issue #11; a blanket reject-all guard was tried and reverted — it broke
+  `test_update_and_every_declared_transition_are_persisted`, which already exercises
+  `CONFIRM_SUBMIT` as a working transition, so the real fix is digest validation via
+  `WorkflowErrorCode.STALE_CONFIRMATION`); `get()`/`execute()` return un-authorized/un-projected
+  full records (→ Issue #14, apply `project_for` before any HTTP response); raw `sqlite3`
+  exceptions and unclosed connections are unsafe under a live server (→ Issue #14, before FastAPI
+  is wired up). PR #26 squash-merged to `main` (`97a29ab`), Issue #10 closed, `main` re-verified
+  (279/279 tests).

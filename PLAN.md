@@ -116,25 +116,31 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   manager's serialized JSON. Independent re-review approved the fixes; PR #24 was squash-merged
   as `980b2c6`, Issue #9 is closed, and `main` is verified. 256/256 tests pass, ruff/format clean,
   offline eval remains 7/7 safety + 8/8 knowledge. Non-blocking follow-ups are tracked in #25.
-- Issue #10 is implemented on `feat/10-leave-sqlite-storage`, pending independent QA and owner
-  acceptance: deterministic v0.1 transitions, authorized optimistic-version command execution,
-  reproducible SQLite schema initialization, restart persistence, atomic request+audit writes,
-  and append-only audit protection. Confirmation and idempotent replay remain explicitly in #11.
-  Local evidence: 279 tests pass, smoke 2/2, Ruff and format checks clean. The repository's full
-  record read and pre-#11 submit transition are internal-only boundaries until #11/#12 wrap them.
+- Issue #10 (SQLite persistence) passed independent QA on 2026-09-21: adversarial probes
+  (process kill mid-transaction, cross-process optimistic-concurrency race, restart, append-only
+  triggers) all confirmed the claimed guarantees. Verdict PASS. PR #26 squash-merged as
+  `97a29ab`; Issue #10 closed; `main` re-verified (279/279 tests). Five non-blocking findings
+  from the review were filed as acceptance criteria rather than fixed inline: `CONFIRM_SUBMIT`
+  does not yet validate `ConfirmationEnvelope.payload_digest` against the stored payload (→
+  Issue #11 — note: a blanket reject-all-`CONFIRM_SUBMIT` guard is wrong, it breaks
+  `test_update_and_every_declared_transition_are_persisted`; the fix must be digest validation
+  mapped to `WorkflowErrorCode.STALE_CONFIRMATION`); `get()` and `execute()` return
+  un-authorized/un-projected full records, safe only because no public caller exists yet (→
+  Issue #14); raw `sqlite3` exceptions and unclosed connections are unsafe under a live server (→
+  Issue #14, before FastAPI is wired up).
 - No HTTP/UI or external integration exists yet; the frozen corpus and local workflow remain
   offline.
 
 ## 7. Next steps
 
-1. Independently review Issue #10, obtain owner acceptance, merge, and verify `main`.
-2. Implement version-bound confirmation, idempotency, and the fake-adapter vertical slice in
-   Issue #11, calling
-   `access_policy` rather than re-deriving access (D1/D2).
-3. Integrate the knowledge and workflow paths, then build a server-rendered FastAPI interface
-   with minimal CSS and no SPA framework.
-4. Complete Docker Compose, offline CI, README, and clean-clone verification.
-5. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
+1. Implement version-bound confirmation, idempotency, and the fake-adapter vertical slice in
+   Issue #11, calling `access_policy` rather than re-deriving access (D1/D2), and closing the
+   `payload_digest` validation gap carried over from the #10 review.
+2. Integrate the knowledge and workflow paths, then build a server-rendered FastAPI interface
+   with minimal CSS and no SPA framework, applying `project_for` to every response per the
+   authorization findings carried over from #10 into Issue #14.
+3. Complete Docker Compose, offline CI, README, and clean-clone verification.
+4. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
    limits, and release decision.
 
 ## 8. Open decisions
