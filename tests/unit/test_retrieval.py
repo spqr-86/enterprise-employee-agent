@@ -10,9 +10,10 @@ from enterprise_employee_agent.knowledge.access import (
 from enterprise_employee_agent.knowledge.retrieval import (
     rank_documents,
     retrieve,
+    retrieve_for_identity,
     tokenize,
 )
-from enterprise_employee_agent.leave.contracts import ActorRole
+from enterprise_employee_agent.leave.contracts import ActorRole, DemoIdentity
 
 US = "people-policies/leave-of-absence/us.md"
 INDEX = "people-policies/leave-of-absence/_index.md"
@@ -84,6 +85,28 @@ def test_forbidden_document_ranks_first_without_filter_and_is_absent_with_it() -
     )
     assert RESTRICTED_FIXTURE_ID not in {r.document_id for r in filtered}
     assert filtered[0].document_id == US
+
+
+def test_retrieve_for_identity_filters_by_the_identitys_role() -> None:
+    access_map = _map(
+        _doc("public", "leave"),
+        _doc("secret", "leave investigations confidential", visibility="hr_only"),
+    )
+    employee = DemoIdentity(
+        identity_id="employee-alice", display_name="Alice", role=ActorRole.EMPLOYEE
+    )
+    manager = DemoIdentity(
+        identity_id="manager-morgan", display_name="Morgan", role=ActorRole.MANAGER
+    )
+    hr = DemoIdentity(identity_id="hr-harper", display_name="Harper", role=ActorRole.HR)
+    question = "confidential leave investigations"
+    assert [r.document_id for r in retrieve_for_identity(question, employee, access_map)] == [
+        "public"
+    ]
+    assert [r.document_id for r in retrieve_for_identity(question, manager, access_map)] == [
+        "public"
+    ]
+    assert retrieve_for_identity(question, hr, access_map)[0].document_id == "secret"
 
 
 def test_repository_cases_rank_as_the_spec_states() -> None:

@@ -18,13 +18,19 @@ from enterprise_employee_agent.knowledge.answer import (
     render_user_prompt,
 )
 from enterprise_employee_agent.knowledge.retrieval import RetrievedDocument
-from enterprise_employee_agent.leave.contracts import ActorRole
+from enterprise_employee_agent.leave.contracts import ActorRole, DemoIdentity
 from enterprise_employee_agent.llm.contract import AnswerStatus, ViolationKind
 from enterprise_employee_agent.llm.openrouter import OpenRouterProvider
 from enterprise_employee_agent.llm.provider import AnswerRequest, ModelConfig, ProviderErrorKind
 from enterprise_employee_agent.llm.scripted import ScriptedProvider
 
 FIXTURES = Path("tests/fixtures/llm")
+TEST_IDENTITY = DemoIdentity(
+    identity_id="employee-alice",
+    display_name="Alice Example",
+    role=ActorRole.EMPLOYEE,
+    reports_to="manager-morgan",
+)
 US = "people-policies/leave-of-absence/us.md"
 SECRET_MARKER = "RESTRICTED-MARKER-7731"
 MODEL = ModelConfig(model_id="test/model", max_tokens=100, timeout_seconds=5.0)
@@ -60,7 +66,7 @@ def _fixture_provider(name: str) -> OpenRouterProvider:
 def _run(provider, **kwargs):  # type: ignore[no-untyped-def]
     return answer_question(
         QUESTION,
-        role=ActorRole.EMPLOYEE,
+        identity=TEST_IDENTITY,
         access_map=_access_map(),
         provider=provider,
         model=MODEL,
@@ -89,7 +95,7 @@ def test_zero_overlap_abstains_without_calling_the_provider() -> None:
     provider = ScriptedProvider({})
     outcome = answer_question(
         "Germany Kindergeld",
-        role=ActorRole.EMPLOYEE,
+        identity=TEST_IDENTITY,
         access_map=_access_map(),
         provider=provider,
         model=MODEL,

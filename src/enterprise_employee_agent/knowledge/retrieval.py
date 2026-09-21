@@ -9,8 +9,9 @@ so results are deterministic. Documents with zero overlap are never returned.
 # ActorRole, and a DocumentAccessMap (Task 1). Output: RetrievedDocument tuples ordered by
 # descending overlap score, filtered to documents the role may read before scoring runs.
 # rank_documents() is the unfiltered primitive used directly by tests and the forbidden-document
-# control; retrieve() is the authorized entry point consumed by later tasks (answer pipeline,
-# offline eval).
+# control. retrieve() takes a raw role and stays for internal/test use; retrieve_for_identity()
+# (Issue #9) is the authorized public entry point — it requires a DemoIdentity resolved by
+# access_policy.resolve_identity, so a raw client-supplied role can never reach retrieval.
 
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from enterprise_employee_agent.knowledge.access import DocumentAccessMap, KnowledgeDocument
-from enterprise_employee_agent.leave.contracts import ActorRole
+from enterprise_employee_agent.leave.contracts import ActorRole, DemoIdentity
 
 RETRIEVAL_VERSION = "lexical-overlap-v1"
 DEFAULT_K = 1
@@ -65,3 +66,10 @@ def retrieve(
 ) -> tuple[RetrievedDocument, ...]:
     """Remove documents the role may not read, then rank what remains."""
     return rank_documents(question, access_map.readable_by(role), k=k)
+
+
+def retrieve_for_identity(
+    question: str, identity: DemoIdentity, access_map: DocumentAccessMap, *, k: int = DEFAULT_K
+) -> tuple[RetrievedDocument, ...]:
+    """Authorized entry point: takes a resolved identity, not a bare role."""
+    return retrieve(question, identity.role, access_map, k=k)

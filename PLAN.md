@@ -97,18 +97,33 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   limitations; report `experiments/issue-8/20260914T145319Z-report.md`. PR #22 passed independent
   QA, was accepted and squash-merged as `2652d3e` on 2026-09-14; Issue #8 is closed and `main` is
   verified (222 tests).
-- Issue #9 (authorization and role projections) is groomed and Ready; owner decisions D1–D3 are
-  recorded in the Issue.
-- No product behavior or external integration exists; the frozen corpus is imported and
+- Issue #9 (authorization and role projections) is implemented on
+  `feat/9-authorization-role-projections` (PR #24): new `leave/access_policy.py`
+  (`resolve_identity`, `can_view`, `visible_requests`, `authorize_command`, `authorize_replay`,
+  `authorize_audit_history`, `project_for`) and a new immutable `LeaveRequest` entity in
+  `leave/contracts.py`, plus `WorkflowError`. `retrieval.retrieve_for_identity()` is now the only
+  retrieval path `answer_question()` calls — it takes a resolved `DemoIdentity`, and
+  `answer_question`'s public parameter changed from a bare `role: ActorRole` to `identity:
+  DemoIdentity` (all three call sites — offline eval, live eval, tests — updated).
+  Independent review (code-reviewer agent) found and this round fixed two blockers: (1) every
+  policy entry point now calls `_verify_bound()`, rejecting a hand-built `DemoIdentity` that
+  does not exactly match the manifest's declared entry for that `identity_id` — without it a
+  forged identity got another employee's HR projection; (2) `retrieve(question, role, ...)` was
+  still the de facto production path via `answer_question`, so it is fully retired from
+  production code now (`retrieve_for_identity` is the only caller). Also strengthened per review:
+  `_score_role_view` compares the exact `ROLE_PROJECTION_FIELDS` key set per role, not just field
+  values; `_score_forbidden_disclosure` asserts a real secret string is absent from the
+  manager's serialized JSON. 256/256 tests pass, ruff/format clean, offline eval still 7/7 safety
+  + 8/8 knowledge. Pending: second review pass and merge; not yet integrated into `main`.
+- No product behavior or external integration exists yet; the frozen corpus is imported and
   validated offline.
 
 ## 7. Next steps
 
-1. Implement Issue #9 (authorization policy and role projections). The two Issue #8 baseline
-   failures stay known limitations; prompt fixes and a rerun belong to Issue #13, which adds
-   retry/repair per decision 0004.
+1. Independent review of the Issue #9 branch, then merge.
 2. Test and implement version-bound confirmation, idempotency, workflow
-   transitions, persistence, and the fake-adapter vertical slice.
+   transitions, persistence, and the fake-adapter vertical slice (Issues #10/#11), calling
+   `access_policy` rather than re-deriving access (D1/D2).
 3. Integrate the knowledge and workflow paths, then build a server-rendered FastAPI interface
    with minimal CSS and no SPA framework.
 4. Complete Docker Compose, offline CI, README, and clean-clone verification.

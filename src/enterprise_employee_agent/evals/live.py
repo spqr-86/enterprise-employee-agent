@@ -96,7 +96,13 @@ from enterprise_employee_agent.evals.budget import (
     spent_in_artifacts,
     worst_case_cost,
 )
-from enterprise_employee_agent.evals.run import CASES_PATH, EVAL_ROLE, calls_model, case_prompt
+from enterprise_employee_agent.evals.run import (
+    CASES_PATH,
+    EVAL_IDENTITY,
+    EVAL_ROLE,
+    calls_model,
+    case_prompt,
+)
 from enterprise_employee_agent.evals.schema import EvalCase
 from enterprise_employee_agent.evals.validator import load_cases, validate_dataset
 from enterprise_employee_agent.knowledge.access import DocumentAccessMap, load_document_access_map
@@ -280,7 +286,7 @@ def run_live(
                 try:
                     outcome = answer_question(
                         case_prompt(case),
-                        role=EVAL_ROLE,
+                        identity=EVAL_IDENTITY,
                         access_map=access_map,
                         provider=provider,
                         model=model,
