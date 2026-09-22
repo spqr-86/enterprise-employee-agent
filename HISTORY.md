@@ -285,3 +285,25 @@
   acceptance получен. PR #27 squash-merged в `main` как `37ff0b1`; Issue #11 закрыт с `done`,
   локальный и hosted `main` проверены (289 тестов, smoke 2/2). Следующий путь до показа:
   #12 offline vertical slice → #13 knowledge/workflow integration → #14 role-aware demo UI.
+- 2026-09-22: Groomed Issue #12 `draft → ready` (dependencies #9/#10/#11 all merged), planned via
+  an Explore agent (mapped existing layers: no application-service module exists; the
+  `evals/run.py` pattern of `bind_server_command`+`repository.execute` is the real precedent for
+  "public application boundaries") and a Plan agent, then implemented `tests/smoke/` on
+  `feat/12-offline-fake-adapter-smoke`: a single positive end-to-end journey (knowledge-slice
+  answer via `ScriptedProvider` → draft → preview/confirm → HR clarification → re-confirm → HR
+  processing → employee/manager/HR projections) and four negative variants (forbidden access,
+  stale confirmation, duplicate submission, fake-provider failure). No `src/` change was needed —
+  `state_machine` and `access_policy` already covered every transition/projection. Independent
+  QA (code-reviewer agent) found two real gaps: the fake-provider-failure test asserted no
+  exception leaked but never proved leave-workflow state was untouched, and the
+  "employee attempts HR command" negative case exercised `access_policy.authorize_command`
+  directly while the real composed path (`bind_server_command`) actually rejects the same input
+  earlier with a bare `ValueError`, not the typed `WorkflowError(FORBIDDEN)` the test implied was
+  reachable. Both fixed: the provider-failure test now snapshots repository state before/after;
+  the forbidden-access test now asserts the real `ValueError` behavior explicitly alongside the
+  boundary-level `authorize_command` check. The `ValueError`-vs-`WorkflowError` inconsistency
+  itself was filed as non-blocking Issue #28 (`bind_server_command`'s role/command guard should
+  raise a typed error for a clean future HTTP mapping in #14). PR #29 squash-merged to `main`
+  (`e70ed9c`), CI green, Issue #12 closed; `main` re-verified (301/301 tests, 7/7 offline smoke
+  via `make eval-smoke`). Next: #13 knowledge/workflow integration → #14 role-aware demo UI,
+  with #28 to resolve before or alongside #14.
