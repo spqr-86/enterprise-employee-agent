@@ -19,6 +19,7 @@ only code-owned judgement here is the deterministic ``(OutcomeKind, AnswerStatus
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -31,6 +32,7 @@ from enterprise_employee_agent.knowledge.answer import (
     OutcomeKind,
     PromptTemplate,
     answer_question,
+    load_prompt,
 )
 from enterprise_employee_agent.leave.access_policy import resolve_identity
 from enterprise_employee_agent.leave.contracts import (
@@ -47,8 +49,18 @@ from enterprise_employee_agent.leave.contracts import (
     bind_server_command,
     build_leave_preview,
 )
-from enterprise_employee_agent.llm.contract import AnswerStatus, ViolationKind
-from enterprise_employee_agent.llm.provider import AnswerProvider, ModelConfig, ProviderErrorKind
+from enterprise_employee_agent.leave.field_proposal import (
+    LeaveFieldProposal,
+    parse_field_proposal,
+)
+from enterprise_employee_agent.llm.contract import AnswerStatus, ContractViolation, ViolationKind
+from enterprise_employee_agent.llm.provider import (
+    AnswerProvider,
+    AnswerRequest,
+    ModelConfig,
+    ProviderError,
+    ProviderErrorKind,
+)
 from enterprise_employee_agent.storage.sqlite import SQLiteLeaveRepository
 
 # RequestClarificationInput.question's own hard limit (leave/contracts.py:227); this module
@@ -346,3 +358,124 @@ def build_clarification_request(
         # A raw ValidationError must never escape this module (untyped; the caller cannot
         # handle it the way it handles every other outcome here).
         raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED) from error
+
+
+FIELD_PROPOSAL_PROMPT_VERSION = "leave-fields-v1"
+
+_DETAIL_TEXT_PLACEHOLDER = re.compile(r"\{detail_text\}")
+
+
+class FieldProposalOutcomeKind(StrEnum):
+    PROPOSED = "proposed"
+    CONTRACT_VIOLATION = "contract_violation"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class FieldProposalOutcome:
+    kind: FieldProposalOutcomeKind
+    proposal: LeaveFieldProposal | None
+    failure: AssistantFailure | None
+
+
+def _render_field_proposal_user_prompt(prompt: PromptTemplate, detail_text: str) -> str:
+    """Substitute only ``{detail_text}``; this template has no ``{documents}``/``{question}``."""
+    return _DETAIL_TEXT_PLACEHOLDER.sub(lambda _match: detail_text, prompt.user)
+
+
+def propose_leave_fields(
+    detail_text: str,
+    *,
+    manifest: DemoAccessManifest,
+    actor_id: Identifier,
+    provider: AnswerProvider,
+    model: ModelConfig,
+    prompt: PromptTemplate | None = None,
+) -> FieldProposalOutcome:
+    """Extract structured leave fields from the employee's own free text.
+
+    Mirrors ``answer_for_actor``'s shape: resolve identity first (uncaught), then a second,
+    independent model call whose JSON output is validated by ``parse_field_proposal``. This
+    function never accepts a ``DemoIdentity``, only a server-selected ``actor_id`` — same
+    invariant as ``answer_for_actor``. It never raises except ``resolve_identity``'s typed
+    ``WorkflowError``: there is no retrieval step and no ``before_call`` budget guard on this
+    path. It never builds a command and never judges completeness itself — an incomplete
+    proposal is still returned as ``PROPOSED``; ``missing_fields()`` on the returned proposal
+    tells the caller what's left.
+    """
+    resolve_identity(manifest, actor_id)
+    prompt = prompt if prompt is not None else load_prompt(FIELD_PROPOSAL_PROMPT_VERSION)
+    request = AnswerRequest(
+        model=model,
+        system_prompt=prompt.system,
+        user_prompt=_render_field_proposal_user_prompt(prompt, detail_text),
+        question=detail_text,
+        retrieved_ids=(),
+    )
+    try:
+        response = provider.complete(request)
+    except ProviderError as error:
+        return FieldProposalOutcome(
+            kind=FieldProposalOutcomeKind.UNAVAILABLE,
+            proposal=None,
+            failure=AssistantFailure(
+                violation_kind=None, error_kind=error.kind, detail=error.detail
+            ),
+        )
+    try:
+        proposal = parse_field_proposal(response.content)
+    except ContractViolation as violation:
+        return FieldProposalOutcome(
+            kind=FieldProposalOutcomeKind.CONTRACT_VIOLATION,
+            proposal=None,
+            failure=AssistantFailure(
+                violation_kind=violation.kind, error_kind=None, detail=violation.detail
+            ),
+        )
+    return FieldProposalOutcome(
+        kind=FieldProposalOutcomeKind.PROPOSED, proposal=proposal, failure=None
+    )
+
+
+def build_create_draft_input(
+    proposal: LeaveFieldProposal, *, idempotency_key: IdempotencyKey
+) -> CreateDraftInput:
+    """Build a ``CreateDraftInput`` from a proposal, or raise ``WorkflowError(VALIDATION_FAILED)``.
+
+    ``proposal.to_payload()`` does the re-validation (incomplete or otherwise invalid); this
+    function does not duplicate that check.
+    """
+    payload = proposal.to_payload()
+    return CreateDraftInput(idempotency_key=idempotency_key, payload=payload)
+
+
+def create_draft_from_proposal(
+    proposal: LeaveFieldProposal,
+    *,
+    repository: SQLiteLeaveRepository,
+    manifest: DemoAccessManifest,
+    actor_id: Identifier,
+    request_id: Identifier,
+    idempotency_key: IdempotencyKey,
+    event_id: str,
+    occurred_at: datetime,
+) -> LeaveRequestPreview:
+    """Bridge a validated field proposal into a created draft.
+
+    ``to_payload()`` (via ``build_create_draft_input``) + Step 4's ``create_draft_from_fields``,
+    nothing more: this function does not duplicate ``bind_server_command``/``repository.execute``/
+    ``build_leave_preview`` itself. ``actor_id`` is the same server-selected identifier
+    ``create_draft_from_fields`` already trusts — nothing about the actor comes from ``proposal``
+    or from the free text that produced it.
+    """
+    command_input = build_create_draft_input(proposal, idempotency_key=idempotency_key)
+    return create_draft_from_fields(
+        command_input.payload,
+        repository=repository,
+        manifest=manifest,
+        actor_id=actor_id,
+        request_id=request_id,
+        idempotency_key=idempotency_key,
+        event_id=event_id,
+        occurred_at=occurred_at,
+    )
