@@ -349,7 +349,15 @@
   new integration test read stored state for its digest comparison via `repository.get(...)`
   directly instead of via `access_policy.project_for`, contradicting the brief's explicit
   interface note. Fix (commit `7567e58`) rebuilt the payload from an `EmployeeLeaveProjection`
-  instead; re-review confirmed addressed, no new breakage. 309/309 tests. Next: Step 5
-  (evidence-bound HR clarification bridge, evidence propagation) — must also check Step 3's
-  design note (`UNAVAILABLE`→`answer=None` vs `NO_EVIDENCE`→synthesized `ABSTAINED`
-  `GroundedAnswer`) against `build_clarification_request`'s handling of both sources.
+  instead; re-review confirmed addressed, no new breakage. 309/309 tests. Step 5 (`build_clarification_request` in `leave/assistant.py`, commit `f34f0ed`)
+  landed clean on the first review: an explicit guard chain (kind is `UNAVAILABLE`/`ABSTAINED` →
+  empty citations → blank/missing `clarifying_question` → length) rejects Step 3's two
+  `ABSTAINED` sources (`NO_EVIDENCE` and `ANSWER`+`AnswerStatus.ABSTAINED`) uniformly with a
+  single check, resolving the Step 3 design note as-is with no special-casing needed; the
+  question text is the model's `clarifying_question` plus a code-built `" (source: <ids>)"`
+  suffix built only from `GroundedAnswer.citations` (never retrieved document text), truncated
+  to fit `RequestClarificationInput`'s `max_length=500` with a `ValidationError` backstop so
+  nothing untyped escapes; no role/actor check inside the function (D-D) — an integration test
+  proves an employee actor gets a typed `WorkflowError(FORBIDDEN)` via the real
+  `bind_server_command` path with byte-identical stored state. 317/317 tests, review Approved,
+  0 Critical/Important findings. Next: Step 6 (`LeaveFieldProposal` contract and parser, D-B).
