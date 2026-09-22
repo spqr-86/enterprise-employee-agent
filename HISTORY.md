@@ -423,3 +423,16 @@
   deepseek-v3.2 recall 6/7 clarification 0/1. PR #30 opened, CI green, mergeable. Next: Petr
   merges; then fill PR number/merge SHA in PLAN.md §6, remove the worktree, move to #14 (UI must
   not render `AssistantFailure.detail`, provider HTTP errors or extraction key names).
+- 2026-09-22 (session 16): PR #30 squash-merged as `eb2b51d`; Issues #13 and #28 closed; `main`
+  re-verified (366 tests, 9 smoke); PLAN.md §6 updated (`1c4592d`); Issue #13 worktree removed.
+  Started grooming Issue #14 (demo UI) via brainstorming, architectural path. Owner decisions:
+  provider selected by config (live OpenRouter when `OPENROUTER_API_KEY` is set, otherwise an
+  offline scripted fixture for 2–3 suggested questions and one leave description, mode shown in
+  the header); identity switcher over all six manifest identities in an unsigned cookie,
+  re-resolved via `resolve_identity` on every request; CSRF via SameSite=Strict cookie plus
+  Origin/Referer check on POST (to be recorded as an ADR); leave fields via free text →
+  `propose_leave_fields` → editable pre-filled form; approach A — `app.py` composes a
+  `DemoApplication` service, `web/` holds only routes, Jinja2 templates and view models, reads go
+  through `can_view`+`project_for` (closes the Issue #10 `get()` gap), `sqlite3` errors map to
+  `WorkflowError`. Design section 1 (pages/flow) presented, awaiting approval; sections 2–3, the
+  spec and the plan remain. No code written.
