@@ -20,6 +20,7 @@ only code-owned judgement here is the deterministic ``(OutcomeKind, AnswerStatus
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
 from enterprise_employee_agent.knowledge.access import DocumentAccessMap
@@ -30,9 +31,20 @@ from enterprise_employee_agent.knowledge.answer import (
     answer_question,
 )
 from enterprise_employee_agent.leave.access_policy import resolve_identity
-from enterprise_employee_agent.leave.contracts import DemoAccessManifest, Identifier
+from enterprise_employee_agent.leave.contracts import (
+    CreateDraftInput,
+    DemoAccessManifest,
+    IdempotencyKey,
+    Identifier,
+    LeaveRequestPayload,
+    LeaveRequestPreview,
+    ProvideClarificationInput,
+    bind_server_command,
+    build_leave_preview,
+)
 from enterprise_employee_agent.llm.contract import AnswerStatus, ViolationKind
 from enterprise_employee_agent.llm.provider import AnswerProvider, ModelConfig, ProviderErrorKind
+from enterprise_employee_agent.storage.sqlite import SQLiteLeaveRepository
 
 # Code-owned referral text. Never model-generated prose (D-D): shown whenever the assistant
 # cannot, or should not, give a grounded answer of its own.
@@ -214,3 +226,57 @@ def answer_for_actor(
             raise AssertionError(
                 f"unmapped pipeline outcome: kind={pipeline.kind!r}, status={status!r}"
             )
+
+
+def create_draft_from_fields(
+    payload: LeaveRequestPayload,
+    *,
+    repository: SQLiteLeaveRepository,
+    manifest: DemoAccessManifest,
+    actor_id: Identifier,
+    request_id: Identifier,
+    idempotency_key: IdempotencyKey,
+    event_id: str,
+    occurred_at: datetime,
+) -> LeaveRequestPreview:
+    """Create a draft from an already-typed payload and return its confirmable preview.
+
+    Pure plumbing (D-D): ``request_id``, ``idempotency_key``, ``event_id``, ``occurred_at`` and
+    ``actor_id`` are all caller/server supplied, never derived from question text or model
+    output, and ``payload`` is not parsed, coerced, or defaulted here.
+    """
+    command_input = CreateDraftInput(idempotency_key=idempotency_key, payload=payload)
+    command = bind_server_command(
+        manifest, actor_id, command_input, generated_request_id=request_id
+    )
+    request = repository.execute(manifest, command, event_id=event_id, occurred_at=occurred_at)
+    return build_leave_preview(request)
+
+
+def provide_clarification_from_fields(
+    payload: LeaveRequestPayload,
+    *,
+    repository: SQLiteLeaveRepository,
+    manifest: DemoAccessManifest,
+    actor_id: Identifier,
+    request_id: Identifier,
+    expected_version: int,
+    idempotency_key: IdempotencyKey,
+    event_id: str,
+    occurred_at: datetime,
+) -> LeaveRequestPreview:
+    """Answer a clarification request with an already-typed payload and re-preview it.
+
+    The state machine already routes ``NEEDS_CLARIFICATION -> NEEDS_CLARIFICATION`` for this
+    command; this function only composes the command and re-previews the result. Same
+    server-supplied invariant as ``create_draft_from_fields``.
+    """
+    command_input = ProvideClarificationInput(
+        idempotency_key=idempotency_key,
+        request_id=request_id,
+        expected_version=expected_version,
+        payload=payload,
+    )
+    command = bind_server_command(manifest, actor_id, command_input)
+    request = repository.execute(manifest, command, event_id=event_id, occurred_at=occurred_at)
+    return build_leave_preview(request)
