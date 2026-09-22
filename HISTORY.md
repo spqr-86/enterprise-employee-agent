@@ -278,5 +278,10 @@
   replay/conflict, actor/operation scoping, ownership change, rollback after result-write failure,
   and a concurrent double-submit with one transition/event. The offline stale/duplicate eval
   cases now exercise the real SQLite command path instead of contract/fingerprint stand-ins.
-  Local evidence: 288 tests, smoke 2/2, Ruff/format and diff-check pass. Branch is pushed; next:
-  open PR, run independent QA on `448f388`, record owner acceptance, merge, and verify `main`.
+  Первый независимый QA PR #27 нашёл блокер: после persisted edit старая envelope безопасно
+  отклонялась, но возвращала `VERSION_CONFLICT` вместо требуемого `STALE_CONFIRMATION`; eval
+  проверял только tampered digest без реального edit. Добавлены regression integration/eval
+  сценарии и исправлен порядок проверок (`149e17e`). Повторный QA PASS, hosted CI зелёный, owner
+  acceptance получен. PR #27 squash-merged в `main` как `37ff0b1`; Issue #11 закрыт с `done`,
+  локальный и hosted `main` проверены (289 тестов, smoke 2/2). Следующий путь до показа:
+  #12 offline vertical slice → #13 knowledge/workflow integration → #14 role-aware demo UI.
