@@ -1,0 +1,216 @@
+"""Grounded-answer orchestration for the leave workflow (Issue #13).
+
+Wraps ``knowledge.answer.answer_question`` in a deterministic outcome-mapping layer the leave
+workflow can consume safely. Two invariants this module exists to enforce:
+
+- unvalidated model prose never survives into the outcome: a contract violation or provider
+  failure always maps to ``UNAVAILABLE`` with ``answer is None``, never a half-parsed
+  ``answer_text``;
+- identity is never accepted from the caller as a ``DemoIdentity`` (which is a plain, forgeable
+  pydantic model outside of ``bind_server_command``'s token-gated path). ``answer_for_actor``
+  takes only a server-selected ``actor_id`` and resolves it itself via
+  ``access_policy.resolve_identity``, exactly like ``bind_server_command`` does for commands.
+
+This module owns no eligibility or jurisdiction logic: whether a question is answerable is
+decided only by the model's own ``AnswerStatus`` plus the retrieval access filter upstream. The
+only code-owned judgement here is the deterministic ``(OutcomeKind, AnswerStatus | None)`` ->
+``AssistantOutcomeKind`` mapping and the referral guidance text.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import StrEnum
+
+from enterprise_employee_agent.knowledge.access import DocumentAccessMap
+from enterprise_employee_agent.knowledge.answer import (
+    DEFAULT_K,
+    OutcomeKind,
+    PromptTemplate,
+    answer_question,
+)
+from enterprise_employee_agent.leave.access_policy import resolve_identity
+from enterprise_employee_agent.leave.contracts import DemoAccessManifest, Identifier
+from enterprise_employee_agent.llm.contract import AnswerStatus, ViolationKind
+from enterprise_employee_agent.llm.provider import AnswerProvider, ModelConfig, ProviderErrorKind
+
+# Code-owned referral text. Never model-generated prose (D-D): shown whenever the assistant
+# cannot, or should not, give a grounded answer of its own.
+_REFERRAL_GUIDANCE = "This is out of scope for the assistant. Contact HR (or Tilt) for help."
+_ANSWERED_GUIDANCE = (
+    "This answer is grounded in the cited policy documents; review them for full details."
+)
+_UNAVAILABLE_GUIDANCE = "The assistant could not answer right now. Contact HR (or Tilt) for help."
+
+
+class AssistantOutcomeKind(StrEnum):
+    ANSWERED = "answered"
+    ABSTAINED = "abstained"
+    ESCALATED = "escalated"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class GroundedAnswer:
+    """A grounded-answer result, self-sufficient without the enclosing ``AssistantOutcome``."""
+
+    kind: AssistantOutcomeKind
+    status: AnswerStatus
+    answer_text: str | None
+    citations: tuple[str, ...]
+    clarifying_question: str | None
+    retrieved_ids: tuple[str, ...]
+
+    @property
+    def needs_clarification(self) -> bool:
+        return self.clarifying_question is not None
+
+
+@dataclass(frozen=True, slots=True)
+class AssistantFailure:
+    """Why the assistant could not produce a grounded answer. Never carries model prose."""
+
+    violation_kind: ViolationKind | None
+    error_kind: ProviderErrorKind | None
+    detail: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class AssistantOutcome:
+    kind: AssistantOutcomeKind
+    answer: GroundedAnswer | None
+    guidance: str
+    failure: AssistantFailure | None
+
+
+def _no_evidence_outcome() -> AssistantOutcome:
+    answer = GroundedAnswer(
+        kind=AssistantOutcomeKind.ABSTAINED,
+        status=AnswerStatus.ABSTAINED,
+        answer_text=None,
+        citations=(),
+        clarifying_question=None,
+        retrieved_ids=(),
+    )
+    return AssistantOutcome(
+        kind=AssistantOutcomeKind.ABSTAINED,
+        answer=answer,
+        guidance=_REFERRAL_GUIDANCE,
+        failure=None,
+    )
+
+
+def answer_for_actor(
+    question: str,
+    *,
+    manifest: DemoAccessManifest,
+    actor_id: Identifier,
+    access_map: DocumentAccessMap,
+    provider: AnswerProvider,
+    model: ModelConfig,
+    prompt: PromptTemplate | None = None,
+    k: int = DEFAULT_K,
+) -> AssistantOutcome:
+    """Resolve ``actor_id`` itself, then map ``answer_question``'s result onto a typed outcome.
+
+    Never accepts a ``DemoIdentity``: only a server-selected ``actor_id`` reaches retrieval and
+    the model prompt, so a forged/hand-built identity has no way into this path.
+    """
+    identity = resolve_identity(manifest, actor_id)
+    pipeline = answer_question(
+        question,
+        identity=identity,
+        access_map=access_map,
+        provider=provider,
+        model=model,
+        prompt=prompt,
+        k=k,
+    )
+
+    status = pipeline.answer.status if pipeline.answer is not None else None
+
+    match (pipeline.kind, status):
+        case (OutcomeKind.NO_EVIDENCE, None):
+            return _no_evidence_outcome()
+
+        case (OutcomeKind.ANSWER, AnswerStatus.ANSWERED):
+            assert pipeline.answer is not None
+            answer = GroundedAnswer(
+                kind=AssistantOutcomeKind.ANSWERED,
+                status=AnswerStatus.ANSWERED,
+                answer_text=pipeline.answer.answer_text,
+                citations=pipeline.answer.citations,
+                clarifying_question=pipeline.answer.clarifying_question,
+                retrieved_ids=pipeline.retrieved_ids,
+            )
+            return AssistantOutcome(
+                kind=AssistantOutcomeKind.ANSWERED,
+                answer=answer,
+                guidance=_ANSWERED_GUIDANCE,
+                failure=None,
+            )
+
+        case (OutcomeKind.ANSWER, AnswerStatus.ESCALATED):
+            assert pipeline.answer is not None
+            answer = GroundedAnswer(
+                kind=AssistantOutcomeKind.ESCALATED,
+                status=AnswerStatus.ESCALATED,
+                answer_text=pipeline.answer.answer_text,
+                citations=pipeline.answer.citations,
+                clarifying_question=pipeline.answer.clarifying_question,
+                retrieved_ids=pipeline.retrieved_ids,
+            )
+            return AssistantOutcome(
+                kind=AssistantOutcomeKind.ESCALATED,
+                answer=answer,
+                guidance=_REFERRAL_GUIDANCE,
+                failure=None,
+            )
+
+        case (OutcomeKind.ANSWER, AnswerStatus.ABSTAINED):
+            assert pipeline.answer is not None
+            answer = GroundedAnswer(
+                kind=AssistantOutcomeKind.ABSTAINED,
+                status=AnswerStatus.ABSTAINED,
+                answer_text=None,
+                citations=pipeline.answer.citations,
+                clarifying_question=None,
+                retrieved_ids=pipeline.retrieved_ids,
+            )
+            return AssistantOutcome(
+                kind=AssistantOutcomeKind.ABSTAINED,
+                answer=answer,
+                guidance=_REFERRAL_GUIDANCE,
+                failure=None,
+            )
+
+        case (OutcomeKind.CONTRACT_VIOLATION, None):
+            failure = AssistantFailure(
+                violation_kind=pipeline.violation_kind,
+                error_kind=None,
+                detail=pipeline.detail,
+            )
+            return AssistantOutcome(
+                kind=AssistantOutcomeKind.UNAVAILABLE,
+                answer=None,
+                guidance=_UNAVAILABLE_GUIDANCE,
+                failure=failure,
+            )
+
+        case (OutcomeKind.PROVIDER_ERROR, None):
+            failure = AssistantFailure(
+                violation_kind=None,
+                error_kind=pipeline.error_kind,
+                detail=pipeline.detail,
+            )
+            return AssistantOutcome(
+                kind=AssistantOutcomeKind.UNAVAILABLE,
+                answer=None,
+                guidance=_UNAVAILABLE_GUIDANCE,
+                failure=failure,
+            )
+
+        case _:
+            raise AssertionError(
+                f"unmapped pipeline outcome: kind={pipeline.kind!r}, status={status!r}"
+            )
