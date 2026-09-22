@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from pydantic import ValidationError
+
 from enterprise_employee_agent.knowledge.access import DocumentAccessMap
 from enterprise_employee_agent.knowledge.answer import (
     DEFAULT_K,
@@ -39,12 +41,19 @@ from enterprise_employee_agent.leave.contracts import (
     LeaveRequestPayload,
     LeaveRequestPreview,
     ProvideClarificationInput,
+    RequestClarificationInput,
+    WorkflowError,
+    WorkflowErrorCode,
     bind_server_command,
     build_leave_preview,
 )
 from enterprise_employee_agent.llm.contract import AnswerStatus, ViolationKind
 from enterprise_employee_agent.llm.provider import AnswerProvider, ModelConfig, ProviderErrorKind
 from enterprise_employee_agent.storage.sqlite import SQLiteLeaveRepository
+
+# RequestClarificationInput.question's own hard limit (leave/contracts.py:227); this module
+# truncates against it directly rather than importing pydantic's field metadata.
+_QUESTION_MAX_LENGTH = 500
 
 # Code-owned referral text. Never model-generated prose (D-D): shown whenever the assistant
 # cannot, or should not, give a grounded answer of its own.
@@ -280,3 +289,60 @@ def provide_clarification_from_fields(
     command = bind_server_command(manifest, actor_id, command_input)
     request = repository.execute(manifest, command, event_id=event_id, occurred_at=occurred_at)
     return build_leave_preview(request)
+
+
+def build_clarification_request(
+    answer: GroundedAnswer,
+    *,
+    request_id: Identifier,
+    expected_version: int,
+    idempotency_key: IdempotencyKey,
+) -> RequestClarificationInput:
+    """Build a ``RequestClarificationInput`` from a grounded answer's own clarifying question.
+
+    Input only (D-D): authorization happens later, in ``bind_server_command``/
+    ``repository.execute``. This function never checks the actor's role — that policy already
+    lives in ``access_policy``/``COMMAND_SPECS`` and duplicating it here would be a defect, not
+    a style choice. ``request_id``, ``expected_version`` and ``idempotency_key`` are
+    caller/server-supplied, never derived, same as every other builder in this module.
+    """
+    # Task 3's answer_for_actor produces ABSTAINED two different ways (synthesized no-evidence,
+    # and the model's own AnswerStatus.ABSTAINED); this single kind check rejects both
+    # uniformly, with nothing left to special-case.
+    if answer.kind in (AssistantOutcomeKind.UNAVAILABLE, AssistantOutcomeKind.ABSTAINED):
+        raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
+
+    if not answer.citations:
+        raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
+
+    if answer.clarifying_question is None or not answer.clarifying_question.strip():
+        raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
+
+    # Code-built suffix: only document ids, never retrieved document text or other model output.
+    suffix = f" (source: {', '.join(answer.citations)})"
+
+    # Same whitespace collapsing as RequestClarificationInput.normalize_question, since our
+    # composed string must already satisfy that validator before construction.
+    normalized_question = " ".join(answer.clarifying_question.split())
+
+    # Decision: truncate the clarifying-question portion to fit max_length=500, always keeping
+    # the full source suffix intact so the citation is never silently dropped.
+    available = _QUESTION_MAX_LENGTH - len(suffix)
+    if available < 1:
+        raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
+    if len(normalized_question) > available:
+        normalized_question = normalized_question[:available].rstrip()
+
+    question = normalized_question + suffix
+
+    try:
+        return RequestClarificationInput(
+            request_id=request_id,
+            expected_version=expected_version,
+            idempotency_key=idempotency_key,
+            question=question,
+        )
+    except ValidationError as error:
+        # A raw ValidationError must never escape this module (untyped; the caller cannot
+        # handle it the way it handles every other outcome here).
+        raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED) from error

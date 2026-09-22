@@ -14,16 +14,20 @@ from enterprise_employee_agent.knowledge.access import (
 )
 from enterprise_employee_agent.leave.assistant import (
     AssistantOutcomeKind,
+    GroundedAnswer,
     answer_for_actor,
+    build_clarification_request,
 )
 from enterprise_employee_agent.leave.contracts import (
     ActorRole,
     DemoAccessManifest,
     DemoIdentity,
+    RequestClarificationInput,
     WorkflowError,
     WorkflowErrorCode,
     load_demo_access_manifest,
 )
+from enterprise_employee_agent.llm.contract import AnswerStatus
 from enterprise_employee_agent.llm.provider import ModelConfig, ProviderErrorKind
 from enterprise_employee_agent.llm.scripted import ScriptedProvider
 
@@ -329,3 +333,93 @@ def test_forbidden_document_never_reaches_prompt_or_serialised_outcome() -> None
     assert provider.requests, "the public document must have been retrieved and sent"
     assert SECRET_MARKER not in provider.requests[0].user_prompt
     assert SECRET_MARKER not in _serialise(outcome)
+
+
+# ---------------------------------------------------------------------------
+# build_clarification_request (Step 5)
+# ---------------------------------------------------------------------------
+
+REQUEST_ID = "leave-alice-clarify-0001"
+EXPECTED_VERSION = 2
+IDEMPOTENCY_KEY = "clarify-alice-build-0001"
+
+
+def _answered_grounded_answer(
+    *,
+    citations: tuple[str, ...] = (US,),
+    clarifying_question: str | None = "Continuous or intermittent?",
+) -> GroundedAnswer:
+    return GroundedAnswer(
+        kind=AssistantOutcomeKind.ANSWERED,
+        status=AnswerStatus.ANSWERED,
+        answer_text="Parental leave is 16 weeks and paid.",
+        citations=citations,
+        clarifying_question=clarifying_question,
+        retrieved_ids=citations,
+    )
+
+
+def _build(answer: GroundedAnswer) -> RequestClarificationInput:
+    return build_clarification_request(
+        answer,
+        request_id=REQUEST_ID,
+        expected_version=EXPECTED_VERSION,
+        idempotency_key=IDEMPOTENCY_KEY,
+    )
+
+
+def test_build_clarification_request_appends_a_code_built_source_suffix() -> None:
+    answer = _answered_grounded_answer(
+        citations=(US, HR_DOC_ID), clarifying_question="Continuous or intermittent?"
+    )
+    command_input = _build(answer)
+    assert command_input.request_id == REQUEST_ID
+    assert command_input.expected_version == EXPECTED_VERSION
+    assert command_input.idempotency_key == IDEMPOTENCY_KEY
+    assert command_input.question.startswith("Continuous or intermittent?")
+    assert command_input.question.endswith(f" (source: {US}, {HR_DOC_ID})")
+    # The suffix is built only from citation ids: the model's own text never contributes it.
+    assert US_TEXT not in command_input.question
+
+
+def test_build_clarification_request_rejects_empty_citations() -> None:
+    answer = _answered_grounded_answer(citations=())
+    with pytest.raises(WorkflowError) as excinfo:
+        _build(answer)
+    assert excinfo.value.code is WorkflowErrorCode.VALIDATION_FAILED
+
+
+@pytest.mark.parametrize("clarifying_question", [None, "   "], ids=["none", "blank"])
+def test_build_clarification_request_rejects_missing_clarifying_question(
+    clarifying_question: str | None,
+) -> None:
+    answer = _answered_grounded_answer(clarifying_question=clarifying_question)
+    with pytest.raises(WorkflowError) as excinfo:
+        _build(answer)
+    assert excinfo.value.code is WorkflowErrorCode.VALIDATION_FAILED
+
+
+@pytest.mark.parametrize("kind", [AssistantOutcomeKind.UNAVAILABLE, AssistantOutcomeKind.ABSTAINED])
+def test_build_clarification_request_rejects_unavailable_and_abstained_kinds(
+    kind: AssistantOutcomeKind,
+) -> None:
+    answer = GroundedAnswer(
+        kind=kind,
+        status=AnswerStatus.ABSTAINED,
+        answer_text=None,
+        citations=(US,),
+        clarifying_question="Continuous or intermittent?",
+        retrieved_ids=(US,),
+    )
+    with pytest.raises(WorkflowError) as excinfo:
+        _build(answer)
+    assert excinfo.value.code is WorkflowErrorCode.VALIDATION_FAILED
+
+
+def test_build_clarification_request_truncates_an_oversized_question_but_keeps_the_suffix() -> None:
+    long_question = "Please clarify: " + ("word " * 200)  # ~900+ chars
+    answer = _answered_grounded_answer(citations=(US, HR_DOC_ID), clarifying_question=long_question)
+    command_input = _build(answer)
+    assert len(command_input.question) <= 500
+    # The citation suffix is never silently dropped, even when the question text is truncated.
+    assert command_input.question.endswith(f" (source: {US}, {HR_DOC_ID})")
