@@ -373,3 +373,16 @@
   schema-name constant provisioned for Step 7; a defence-in-depth branch under-commented at its
   own site). Next: Step 7 (`propose_leave_fields` orchestration + proposal→command bridge),
   which also carries the `ScriptedProvider(key=...)` addition deferred from D-E's Step 3 ruling.
+  Step 7 (commit `f06c362`) added `propose_leave_fields`, `build_create_draft_input` and
+  `create_draft_from_proposal` (delegating to Step 4's `create_draft_from_fields`, no second
+  write path) plus the backward-compatible `ScriptedProvider(key=...)`; 341/341 tests, review
+  Approved first time. Step 8 (commits `c37d880`, `4e28551`) is a test-only module,
+  `tests/integration/test_assistant_failure_paths.py`, covering all eleven failure-path rows
+  (invalid JSON, schema, citation not retrieved, timeout, 503, prompt injection with a refusing
+  and an obedient model, role spoofing, forbidden document before context, forbidden content in
+  records, non-US question); each seeds a real draft and asserts it unchanged. Role spoofing
+  surfaces as `WorkflowError(FORBIDDEN)` in both directions. One review round: the
+  citation-not-retrieved row now pins that a model-fabricated document id appears only in
+  `AssistantFailure.detail` (diagnostic, from `ContractViolation.detail`), never in answer,
+  guidance or citations — a known limitation for Issue #14: the UI must not render that field.
+  353/353 tests. Next: Step 9 (wire `expects_clarification` into the eval scorer).
