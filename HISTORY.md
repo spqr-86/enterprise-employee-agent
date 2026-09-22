@@ -410,3 +410,16 @@
   deterministic safety 8/8; the smoke test was checked non-vacuous by swapping in a bogus citation
   and seeing it fail. Review Approved with no findings at any severity. Next: final whole-branch
   review (Step 12 folded into it), then the PR.
+- 2026-09-22 (session 15): Final whole-branch review of Issue #13 (opus, 21 commits) returned
+  "With fixes": 0 Critical, 2 Important. I-1: `OpenRouterProvider.build_payload` always sent the
+  answer schema, so `propose_leave_fields` could never work against a live provider — fixed with
+  an optional `AnswerRequest.response_schema` (default byte-identical) wired to the field-proposal
+  schema. I-2: `build_clarification_request` did not check that citations are readable by the
+  employee, so an HR-scoped answer could leak an HR-only doc id into the employee-visible
+  clarification — now rejected with `VALIDATION_FAILED`. M-3: `</detail>` breakout in the
+  extraction prompt escaped (answer-v1's `</document>` analogue carried). Scoped re-review
+  approved. Step 12 at 8b70903: check clean, 366 tests, smoke 9, eval-offline 100%, safety 8/8;
+  run #8 re-scored via `compute_model_metrics()`: gpt-5-mini recall 7/7 clarification 1/1,
+  deepseek-v3.2 recall 6/7 clarification 0/1. PR #30 opened, CI green, mergeable. Next: Petr
+  merges; then fill PR number/merge SHA in PLAN.md §6, remove the worktree, move to #14 (UI must
+  not render `AssistantFailure.detail`, provider HTTP errors or extraction key names).
