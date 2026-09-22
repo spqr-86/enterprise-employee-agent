@@ -307,3 +307,21 @@
   (`e70ed9c`), CI green, Issue #12 closed; `main` re-verified (301/301 tests, 7/7 offline smoke
   via `make eval-smoke`). Next: #13 knowledge/workflow integration → #14 role-aware demo UI,
   with #28 to resolve before or alongside #14.
+- 2026-09-22 (second session): Groomed Issue #13 `draft → ready` (dependencies #8/#12 both
+  closed; the issue's own "Ready/open decisions" field already declared no unresolved decisions
+  once they land). Planned via the same Explore-then-Plan agent pattern: Explore mapped the
+  `knowledge/answer.py::answer_question` retrieval/answer path and the `leave/` typed-workflow
+  boundaries (`bind_server_command`/`repository.execute`/`access_policy.project_for`) and
+  confirmed the two packages have zero cross-imports today — the knowledge→workflow bridge does
+  not exist anywhere. Plan agent designed a 12-step TDD plan, saved to
+  `docs/superpowers/plans/2026-09-22-issue-13-integrate-grounded-answers.md`. Key design
+  decisions: (1) fix Issue #28 first as a prerequisite, not a follow-up, since orchestration
+  multiplies `bind_server_command` call sites and AC-3's "state unchanged on invalid input"
+  needs a typed error to test against; (2) structured leave-field extraction gets its own new
+  contract (`LeaveFieldProposal`) and prompt (`leave-fields-v1`) rather than extending the
+  existing `AnswerContract`/`answer-v1`, to avoid invalidating the recorded Issue #8 baseline and
+  because citation-backed answers and employee-stated dates are different validation regimes;
+  (3) new modules land inside `leave/` (`assistant.py`, `field_proposal.py`) per the framework's
+  package boundary, not a new top-level package. No code was written — planning only. Next:
+  implement the plan (a fresh session was recommended to start it, this one having grown to
+  ~106K tokens of planning context).
