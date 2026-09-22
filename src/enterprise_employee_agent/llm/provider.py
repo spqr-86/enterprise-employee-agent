@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +32,12 @@ class AnswerRequest:
     user_prompt: str
     question: str
     retrieved_ids: tuple[str, ...]
+    # (schema_name, json_schema) sent as the provider's structured-output contract; None means
+    # "use the provider's own default" (OpenRouterProvider defaults to the answer contract, so
+    # every existing answer_question() call stays byte-identical). Set explicitly by callers that
+    # want a different structured-output contract, e.g. propose_leave_fields's leave-field
+    # proposal schema (final review I-1).
+    response_schema: tuple[str, dict[str, Any]] | None = None
 
     def record(self) -> dict[str, object]:
         """What a run artifact stores about the request: never keys, headers or transport."""

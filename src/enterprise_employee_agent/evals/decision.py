@@ -110,6 +110,7 @@ class ModelMetrics:
     model_id: str
     recall_at_1: Count
     constant_ranker_recall_at_1: Count
+    clarification: Count
     abstention: Count
     groundedness: Count | None
     task_success: Count | None
@@ -149,7 +150,15 @@ def compute_model_metrics(
     calls = {call.case_id: call for call in artifact.calls if call.model_id == model_id}
     reviews = {review.case_id: review for review in artifact.reviews if review.model_id == model_id}
     counts = {
-        name: [0, 0] for name in ("recall", "control", "abstention", "groundedness", "task_success")
+        name: [0, 0]
+        for name in (
+            "recall",
+            "control",
+            "abstention",
+            "groundedness",
+            "task_success",
+            "clarification",
+        )
     }
     failures: list[FailureRow] = []
     missing_reviews: list[str] = []
@@ -186,8 +195,26 @@ def compute_model_metrics(
             if case.abstain_expected:
                 tally("abstention", abstained, case.id, _call_detail(call))
                 continue
-            recall = score_knowledge_case(case, actual_evidence=citations, abstained=abstained)
-            tally("recall", call is not None and recall.passed, case.id, _call_detail(call))
+            clarification_requested = answer is not None and answer.clarifying_question is not None
+            recall = score_knowledge_case(
+                case,
+                actual_evidence=citations,
+                abstained=abstained,
+                clarification_requested=clarification_requested,
+            )
+            tally(
+                "recall",
+                call is not None and not abstained and recall.recall == 1.0,
+                case.id,
+                _call_detail(call),
+            )
+            if recall.clarification_ok is not None:
+                tally(
+                    "clarification",
+                    call is not None and recall.clarification_ok is True,
+                    case.id,
+                    _call_detail(call),
+                )
             control = set(case.expected_evidence) <= {CONSTANT_RANKER_DOCUMENT}
             counts["control"][1] += 1
             counts["control"][0] += int(control)
@@ -260,6 +287,7 @@ def compute_model_metrics(
         model_id=model_id,
         recall_at_1=Count(*counts["recall"]),
         constant_ranker_recall_at_1=Count(*counts["control"]),
+        clarification=Count(*counts["clarification"]),
         abstention=Count(*counts["abstention"]),
         groundedness=Count(*counts["groundedness"]) if reviewed else None,
         task_success=Count(*counts["task_success"]) if reviewed else None,
@@ -324,6 +352,8 @@ def _model_section(artifact: RunArtifact, item: ModelMetrics) -> list[str]:
         f"{item.recall_at_1.render()} |",
         f'| Constant ranker "always us.md" (control) | '
         f"{item.constant_ranker_recall_at_1.render()} |",
+        f"| Clarification (cases with expects_clarification, reported not gated) | "
+        f"{item.clarification.render()} |",
         f"| Groundedness | {_render_reviewed(item.groundedness)} |",
         f"| Task success | {_render_reviewed(item.task_success)} |",
         f"| Abstention | {item.abstention.render()} |",

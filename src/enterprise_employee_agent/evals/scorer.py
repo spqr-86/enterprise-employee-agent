@@ -28,6 +28,7 @@ class KnowledgeCaseResult:
     passed: bool
     recall: float | None
     abstained_correctly: bool | None
+    clarification_ok: bool | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,15 +54,21 @@ class EvalReport:
 
 
 def score_knowledge_case(
-    case: KnowledgeEvalCase, *, actual_evidence: Sequence[str], abstained: bool
+    case: KnowledgeEvalCase,
+    *,
+    actual_evidence: Sequence[str],
+    abstained: bool,
+    clarification_requested: bool = False,
 ) -> KnowledgeCaseResult:
+    clarification_ok = clarification_requested if case.expects_clarification else None
     if case.abstain_expected:
         return KnowledgeCaseResult(
             case_id=case.id,
             category=case.category,
-            passed=abstained,
+            passed=abstained and clarification_ok is not False,
             recall=None,
             abstained_correctly=abstained,
+            clarification_ok=clarification_ok,
         )
     expected = set(case.expected_evidence)
     actual = set(actual_evidence)
@@ -69,9 +76,10 @@ def score_knowledge_case(
     return KnowledgeCaseResult(
         case_id=case.id,
         category=case.category,
-        passed=(not abstained) and recall == 1.0,
+        passed=(not abstained) and recall == 1.0 and clarification_ok is not False,
         recall=recall,
         abstained_correctly=False if abstained else None,
+        clarification_ok=clarification_ok,
     )
 
 

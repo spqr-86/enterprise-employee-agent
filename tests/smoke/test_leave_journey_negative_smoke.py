@@ -102,9 +102,9 @@ def test_forbidden_access_matches_the_manifests_own_negative_cases(repository, m
 
             # The real composed path (bind_server_command -> repository.execute) never reaches
             # authorize_command for this case: _CommandContext.__post_init__ rejects a
-            # role/command mismatch with a bare ValueError first. That is today's actual,
-            # arguably inconsistent, behavior (tracked as a follow-up, not fixed by #12).
-            with pytest.raises(ValueError, match="actor role is not allowed for command"):
+            # role/command mismatch first, with the same typed FORBIDDEN error
+            # authorize_command would raise (fixed as part of Issue #28).
+            with pytest.raises(WorkflowError) as bind_excinfo:
                 _bind(
                     manifest,
                     case.actor_id,
@@ -114,6 +114,7 @@ def test_forbidden_access_matches_the_manifests_own_negative_cases(repository, m
                         idempotency_key="forbidden-start-processing-0001",
                     ),
                 )
+            assert bind_excinfo.value.code is WorkflowErrorCode.FORBIDDEN
         else:  # pragma: no cover - the demo manifest declares no other action
             pytest.fail(f"unhandled negative access action: {case.action}")
 

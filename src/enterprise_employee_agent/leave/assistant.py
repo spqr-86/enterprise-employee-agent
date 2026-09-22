@@ -1,0 +1,519 @@
+"""Grounded-answer orchestration for the leave workflow (Issue #13).
+
+Wraps ``knowledge.answer.answer_question`` in a deterministic outcome-mapping layer the leave
+workflow can consume safely. Two invariants this module exists to enforce:
+
+- unvalidated model prose never survives into the outcome: a contract violation or provider
+  failure always maps to ``UNAVAILABLE`` with ``answer is None``, never a half-parsed
+  ``answer_text``;
+- identity is never accepted from the caller as a ``DemoIdentity`` (which is a plain, forgeable
+  pydantic model outside of ``bind_server_command``'s token-gated path). ``answer_for_actor``
+  takes only a server-selected ``actor_id`` and resolves it itself via
+  ``access_policy.resolve_identity``, exactly like ``bind_server_command`` does for commands.
+
+This module owns no eligibility or jurisdiction logic: whether a question is answerable is
+decided only by the model's own ``AnswerStatus`` plus the retrieval access filter upstream. The
+only code-owned judgement here is the deterministic ``(OutcomeKind, AnswerStatus | None)`` ->
+``AssistantOutcomeKind`` mapping and the referral guidance text.
+"""
+
+# ANCHOR: No function in this module accepts a DemoIdentity parameter — only a server-selected
+# actor_id, resolved internally via access_policy.resolve_identity, exactly like
+# bind_server_command does for commands. Unvalidated model prose never survives into a returned
+# outcome: a contract violation or provider failure always maps to UNAVAILABLE with answer/
+# proposal None, never a half-parsed answer_text or an invented field. This module owns no
+# eligibility or jurisdiction logic — whether a question is answerable is decided by the model's
+# own AnswerStatus plus the upstream retrieval access filter, never by a check written here.
+# Referral text (_REFERRAL_GUIDANCE, _ANSWERED_GUIDANCE, _UNAVAILABLE_GUIDANCE) is a code-owned
+# constant, never model-generated. Nothing here auto-confirms: create_draft_from_proposal and
+# create_draft_from_fields only reach DRAFT; submission stays a separate explicit employee act on
+# a build_leave_preview envelope (bind_server_command + repository.execute), which this module
+# never calls on the employee's behalf.
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from datetime import datetime
+from enum import StrEnum
+
+from pydantic import ValidationError
+
+from enterprise_employee_agent.knowledge.access import DocumentAccessMap
+from enterprise_employee_agent.knowledge.answer import (
+    DEFAULT_K,
+    OutcomeKind,
+    PromptTemplate,
+    answer_question,
+    load_prompt,
+)
+from enterprise_employee_agent.leave.access_policy import resolve_identity
+from enterprise_employee_agent.leave.contracts import (
+    ActorRole,
+    CreateDraftInput,
+    DemoAccessManifest,
+    IdempotencyKey,
+    Identifier,
+    LeaveRequestPayload,
+    LeaveRequestPreview,
+    ProvideClarificationInput,
+    RequestClarificationInput,
+    WorkflowError,
+    WorkflowErrorCode,
+    bind_server_command,
+    build_leave_preview,
+)
+from enterprise_employee_agent.leave.field_proposal import (
+    LEAVE_FIELD_PROPOSAL_JSON_SCHEMA,
+    LEAVE_FIELD_PROPOSAL_SCHEMA_NAME,
+    LeaveFieldProposal,
+    parse_field_proposal,
+)
+from enterprise_employee_agent.llm.contract import AnswerStatus, ContractViolation, ViolationKind
+from enterprise_employee_agent.llm.provider import (
+    AnswerProvider,
+    AnswerRequest,
+    ModelConfig,
+    ProviderError,
+    ProviderErrorKind,
+)
+from enterprise_employee_agent.storage.sqlite import SQLiteLeaveRepository
+
+# RequestClarificationInput.question's own hard limit (leave/contracts.py:227); this module
+# truncates against it directly rather than importing pydantic's field metadata.
+_QUESTION_MAX_LENGTH = 500
+
+# Code-owned referral text. Never model-generated prose (D-D): shown whenever the assistant
+# cannot, or should not, give a grounded answer of its own.
+_REFERRAL_GUIDANCE = "This is out of scope for the assistant. Contact HR (or Tilt) for help."
+_ANSWERED_GUIDANCE = (
+    "This answer is grounded in the cited policy documents; review them for full details."
+)
+_UNAVAILABLE_GUIDANCE = "The assistant could not answer right now. Contact HR (or Tilt) for help."
+
+
+class AssistantOutcomeKind(StrEnum):
+    ANSWERED = "answered"
+    ABSTAINED = "abstained"
+    ESCALATED = "escalated"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class GroundedAnswer:
+    """A grounded-answer result, self-sufficient without the enclosing ``AssistantOutcome``."""
+
+    kind: AssistantOutcomeKind
+    status: AnswerStatus
+    answer_text: str | None
+    citations: tuple[str, ...]
+    clarifying_question: str | None
+    retrieved_ids: tuple[str, ...]
+
+    @property
+    def needs_clarification(self) -> bool:
+        return self.clarifying_question is not None
+
+
+@dataclass(frozen=True, slots=True)
+class AssistantFailure:
+    """Why the assistant could not produce a grounded answer. Never carries model prose."""
+
+    violation_kind: ViolationKind | None
+    error_kind: ProviderErrorKind | None
+    detail: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class AssistantOutcome:
+    kind: AssistantOutcomeKind
+    answer: GroundedAnswer | None
+    guidance: str
+    failure: AssistantFailure | None
+
+
+def _no_evidence_outcome() -> AssistantOutcome:
+    answer = GroundedAnswer(
+        kind=AssistantOutcomeKind.ABSTAINED,
+        status=AnswerStatus.ABSTAINED,
+        answer_text=None,
+        citations=(),
+        clarifying_question=None,
+        retrieved_ids=(),
+    )
+    return AssistantOutcome(
+        kind=AssistantOutcomeKind.ABSTAINED,
+        answer=answer,
+        guidance=_REFERRAL_GUIDANCE,
+        failure=None,
+    )
+
+
+def answer_for_actor(
+    question: str,
+    *,
+    manifest: DemoAccessManifest,
+    actor_id: Identifier,
+    access_map: DocumentAccessMap,
+    provider: AnswerProvider,
+    model: ModelConfig,
+    prompt: PromptTemplate | None = None,
+    k: int = DEFAULT_K,
+) -> AssistantOutcome:
+    """Resolve ``actor_id`` itself, then map ``answer_question``'s result onto a typed outcome.
+
+    Never accepts a ``DemoIdentity``: only a server-selected ``actor_id`` reaches retrieval and
+    the model prompt, so a forged/hand-built identity has no way into this path.
+    """
+    identity = resolve_identity(manifest, actor_id)
+    pipeline = answer_question(
+        question,
+        identity=identity,
+        access_map=access_map,
+        provider=provider,
+        model=model,
+        prompt=prompt,
+        k=k,
+    )
+
+    status = pipeline.answer.status if pipeline.answer is not None else None
+
+    match (pipeline.kind, status):
+        case (OutcomeKind.NO_EVIDENCE, None):
+            return _no_evidence_outcome()
+
+        case (OutcomeKind.ANSWER, AnswerStatus.ANSWERED):
+            assert pipeline.answer is not None
+            answer = GroundedAnswer(
+                kind=AssistantOutcomeKind.ANSWERED,
+                status=AnswerStatus.ANSWERED,
+                answer_text=pipeline.answer.answer_text,
+                citations=pipeline.answer.citations,
+                clarifying_question=pipeline.answer.clarifying_question,
+                retrieved_ids=pipeline.retrieved_ids,
+            )
+            return AssistantOutcome(
+                kind=AssistantOutcomeKind.ANSWERED,
+                answer=answer,
+                guidance=_ANSWERED_GUIDANCE,
+                failure=None,
+            )
+
+        case (OutcomeKind.ANSWER, AnswerStatus.ESCALATED):
+            assert pipeline.answer is not None
+            answer = GroundedAnswer(
+                kind=AssistantOutcomeKind.ESCALATED,
+                status=AnswerStatus.ESCALATED,
+                answer_text=pipeline.answer.answer_text,
+                citations=pipeline.answer.citations,
+                clarifying_question=pipeline.answer.clarifying_question,
+                retrieved_ids=pipeline.retrieved_ids,
+            )
+            return AssistantOutcome(
+                kind=AssistantOutcomeKind.ESCALATED,
+                answer=answer,
+                guidance=_REFERRAL_GUIDANCE,
+                failure=None,
+            )
+
+        case (OutcomeKind.ANSWER, AnswerStatus.ABSTAINED):
+            assert pipeline.answer is not None
+            answer = GroundedAnswer(
+                kind=AssistantOutcomeKind.ABSTAINED,
+                status=AnswerStatus.ABSTAINED,
+                answer_text=None,
+                citations=pipeline.answer.citations,
+                clarifying_question=None,
+                retrieved_ids=pipeline.retrieved_ids,
+            )
+            return AssistantOutcome(
+                kind=AssistantOutcomeKind.ABSTAINED,
+                answer=answer,
+                guidance=_REFERRAL_GUIDANCE,
+                failure=None,
+            )
+
+        case (OutcomeKind.CONTRACT_VIOLATION, None):
+            failure = AssistantFailure(
+                violation_kind=pipeline.violation_kind,
+                error_kind=None,
+                detail=pipeline.detail,
+            )
+            return AssistantOutcome(
+                kind=AssistantOutcomeKind.UNAVAILABLE,
+                answer=None,
+                guidance=_UNAVAILABLE_GUIDANCE,
+                failure=failure,
+            )
+
+        case (OutcomeKind.PROVIDER_ERROR, None):
+            failure = AssistantFailure(
+                violation_kind=None,
+                error_kind=pipeline.error_kind,
+                detail=pipeline.detail,
+            )
+            return AssistantOutcome(
+                kind=AssistantOutcomeKind.UNAVAILABLE,
+                answer=None,
+                guidance=_UNAVAILABLE_GUIDANCE,
+                failure=failure,
+            )
+
+        case _:
+            raise AssertionError(
+                f"unmapped pipeline outcome: kind={pipeline.kind!r}, status={status!r}"
+            )
+
+
+def create_draft_from_fields(
+    payload: LeaveRequestPayload,
+    *,
+    repository: SQLiteLeaveRepository,
+    manifest: DemoAccessManifest,
+    actor_id: Identifier,
+    request_id: Identifier,
+    idempotency_key: IdempotencyKey,
+    event_id: str,
+    occurred_at: datetime,
+) -> LeaveRequestPreview:
+    """Create a draft from an already-typed payload and return its confirmable preview.
+
+    Pure plumbing (D-D): ``request_id``, ``idempotency_key``, ``event_id``, ``occurred_at`` and
+    ``actor_id`` are all caller/server supplied, never derived from question text or model
+    output, and ``payload`` is not parsed, coerced, or defaulted here.
+    """
+    command_input = CreateDraftInput(idempotency_key=idempotency_key, payload=payload)
+    command = bind_server_command(
+        manifest, actor_id, command_input, generated_request_id=request_id
+    )
+    request = repository.execute(manifest, command, event_id=event_id, occurred_at=occurred_at)
+    return build_leave_preview(request)
+
+
+def provide_clarification_from_fields(
+    payload: LeaveRequestPayload,
+    *,
+    repository: SQLiteLeaveRepository,
+    manifest: DemoAccessManifest,
+    actor_id: Identifier,
+    request_id: Identifier,
+    expected_version: int,
+    idempotency_key: IdempotencyKey,
+    event_id: str,
+    occurred_at: datetime,
+) -> LeaveRequestPreview:
+    """Answer a clarification request with an already-typed payload and re-preview it.
+
+    The state machine already routes ``NEEDS_CLARIFICATION -> NEEDS_CLARIFICATION`` for this
+    command; this function only composes the command and re-previews the result. Same
+    server-supplied invariant as ``create_draft_from_fields``.
+    """
+    command_input = ProvideClarificationInput(
+        idempotency_key=idempotency_key,
+        request_id=request_id,
+        expected_version=expected_version,
+        payload=payload,
+    )
+    command = bind_server_command(manifest, actor_id, command_input)
+    request = repository.execute(manifest, command, event_id=event_id, occurred_at=occurred_at)
+    return build_leave_preview(request)
+
+
+def build_clarification_request(
+    answer: GroundedAnswer,
+    *,
+    access_map: DocumentAccessMap,
+    request_id: Identifier,
+    expected_version: int,
+    idempotency_key: IdempotencyKey,
+) -> RequestClarificationInput:
+    """Build a ``RequestClarificationInput`` from a grounded answer's own clarifying question.
+
+    Input only (D-D): authorization happens later, in ``bind_server_command``/
+    ``repository.execute``. This function never checks the actor's role — that policy already
+    lives in ``access_policy``/``COMMAND_SPECS`` and duplicating it here would be a defect, not
+    a style choice. ``request_id``, ``expected_version`` and ``idempotency_key`` are
+    caller/server-supplied, never derived, same as every other builder in this module.
+
+    ``access_map`` guards a different, narrower thing: the built ``question`` is projected
+    straight to the employee (``EmployeeLeaveProjection.clarification_question``), so ``answer``
+    must never carry a citation the employee cannot read (final review I-2). This is not a role
+    check on the actor issuing the command — that stays ``bind_server_command``'s job — it is a
+    check on what audience the *answer itself* was produced for, since ``GroundedAnswer`` carries
+    no record of that and any caller could otherwise pass in an HR-scoped answer.
+    """
+    # Task 3's answer_for_actor produces ABSTAINED two different ways (synthesized no-evidence,
+    # and the model's own AnswerStatus.ABSTAINED); this single kind check rejects both
+    # uniformly, with nothing left to special-case.
+    if answer.kind in (AssistantOutcomeKind.UNAVAILABLE, AssistantOutcomeKind.ABSTAINED):
+        raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
+
+    if not answer.citations:
+        raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
+
+    employee_readable_ids = {document.id for document in access_map.readable_by(ActorRole.EMPLOYEE)}
+    if not set(answer.citations) <= employee_readable_ids:
+        raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
+
+    if answer.clarifying_question is None or not answer.clarifying_question.strip():
+        raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
+
+    # Code-built suffix: only document ids, never retrieved document text or other model output.
+    suffix = f" (source: {', '.join(answer.citations)})"
+
+    # Same whitespace collapsing as RequestClarificationInput.normalize_question, since our
+    # composed string must already satisfy that validator before construction.
+    normalized_question = " ".join(answer.clarifying_question.split())
+
+    # Decision: truncate the clarifying-question portion to fit max_length=500, always keeping
+    # the full source suffix intact so the citation is never silently dropped.
+    available = _QUESTION_MAX_LENGTH - len(suffix)
+    if available < 1:
+        raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
+    if len(normalized_question) > available:
+        normalized_question = normalized_question[:available].rstrip()
+
+    question = normalized_question + suffix
+
+    try:
+        return RequestClarificationInput(
+            request_id=request_id,
+            expected_version=expected_version,
+            idempotency_key=idempotency_key,
+            question=question,
+        )
+    except ValidationError as error:
+        # A raw ValidationError must never escape this module (untyped; the caller cannot
+        # handle it the way it handles every other outcome here).
+        raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED) from error
+
+
+FIELD_PROPOSAL_PROMPT_VERSION = "leave-fields-v1"
+
+_DETAIL_TEXT_PLACEHOLDER = re.compile(r"\{detail_text\}")
+# Any case/whitespace variant of a literal closing </detail> tag inside the employee's own text,
+# which would otherwise let it break out of the <detail> wrapper in prompts/leave-fields-v1/
+# user.md and be read as prompt structure rather than untrusted data (final review M-3).
+_DETAIL_CLOSE_TAG = re.compile(r"</\s*detail\s*>", re.IGNORECASE)
+
+
+class FieldProposalOutcomeKind(StrEnum):
+    PROPOSED = "proposed"
+    CONTRACT_VIOLATION = "contract_violation"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class FieldProposalOutcome:
+    kind: FieldProposalOutcomeKind
+    proposal: LeaveFieldProposal | None
+    failure: AssistantFailure | None
+
+
+def _render_field_proposal_user_prompt(prompt: PromptTemplate, detail_text: str) -> str:
+    """Substitute only ``{detail_text}``; this template has no ``{documents}``/``{question}``.
+
+    A literal ``</detail>`` inside the employee's own text is neutralised first (M-3), so it can
+    never close the wrapper tag early and be read as prompt structure by the model.
+    """
+    escaped = _DETAIL_CLOSE_TAG.sub("&lt;/detail&gt;", detail_text)
+    return _DETAIL_TEXT_PLACEHOLDER.sub(lambda _match: escaped, prompt.user)
+
+
+def propose_leave_fields(
+    detail_text: str,
+    *,
+    manifest: DemoAccessManifest,
+    actor_id: Identifier,
+    provider: AnswerProvider,
+    model: ModelConfig,
+    prompt: PromptTemplate | None = None,
+) -> FieldProposalOutcome:
+    """Extract structured leave fields from the employee's own free text.
+
+    Mirrors ``answer_for_actor``'s shape: resolve identity first (uncaught), then a second,
+    independent model call whose JSON output is validated by ``parse_field_proposal``. This
+    function never accepts a ``DemoIdentity``, only a server-selected ``actor_id`` — same
+    invariant as ``answer_for_actor``. It never raises except ``resolve_identity``'s typed
+    ``WorkflowError``: there is no retrieval step and no ``before_call`` budget guard on this
+    path. It never builds a command and never judges completeness itself — an incomplete
+    proposal is still returned as ``PROPOSED``; ``missing_fields()`` on the returned proposal
+    tells the caller what's left.
+    """
+    resolve_identity(manifest, actor_id)
+    prompt = prompt if prompt is not None else load_prompt(FIELD_PROPOSAL_PROMPT_VERSION)
+    request = AnswerRequest(
+        model=model,
+        system_prompt=prompt.system,
+        user_prompt=_render_field_proposal_user_prompt(prompt, detail_text),
+        question=detail_text,
+        retrieved_ids=(),
+        response_schema=(LEAVE_FIELD_PROPOSAL_SCHEMA_NAME, LEAVE_FIELD_PROPOSAL_JSON_SCHEMA),
+    )
+    try:
+        response = provider.complete(request)
+    except ProviderError as error:
+        return FieldProposalOutcome(
+            kind=FieldProposalOutcomeKind.UNAVAILABLE,
+            proposal=None,
+            failure=AssistantFailure(
+                violation_kind=None, error_kind=error.kind, detail=error.detail
+            ),
+        )
+    try:
+        proposal = parse_field_proposal(response.content)
+    except ContractViolation as violation:
+        return FieldProposalOutcome(
+            kind=FieldProposalOutcomeKind.CONTRACT_VIOLATION,
+            proposal=None,
+            failure=AssistantFailure(
+                violation_kind=violation.kind, error_kind=None, detail=violation.detail
+            ),
+        )
+    return FieldProposalOutcome(
+        kind=FieldProposalOutcomeKind.PROPOSED, proposal=proposal, failure=None
+    )
+
+
+def build_create_draft_input(
+    proposal: LeaveFieldProposal, *, idempotency_key: IdempotencyKey
+) -> CreateDraftInput:
+    """Build a ``CreateDraftInput`` from a proposal, or raise ``WorkflowError(VALIDATION_FAILED)``.
+
+    ``proposal.to_payload()`` does the re-validation (incomplete or otherwise invalid); this
+    function does not duplicate that check.
+    """
+    payload = proposal.to_payload()
+    return CreateDraftInput(idempotency_key=idempotency_key, payload=payload)
+
+
+def create_draft_from_proposal(
+    proposal: LeaveFieldProposal,
+    *,
+    repository: SQLiteLeaveRepository,
+    manifest: DemoAccessManifest,
+    actor_id: Identifier,
+    request_id: Identifier,
+    idempotency_key: IdempotencyKey,
+    event_id: str,
+    occurred_at: datetime,
+) -> LeaveRequestPreview:
+    """Bridge a validated field proposal into a created draft.
+
+    ``to_payload()`` (via ``build_create_draft_input``) + Step 4's ``create_draft_from_fields``,
+    nothing more: this function does not duplicate ``bind_server_command``/``repository.execute``/
+    ``build_leave_preview`` itself. ``actor_id`` is the same server-selected identifier
+    ``create_draft_from_fields`` already trusts — nothing about the actor comes from ``proposal``
+    or from the free text that produced it.
+    """
+    command_input = build_create_draft_input(proposal, idempotency_key=idempotency_key)
+    return create_draft_from_fields(
+        command_input.payload,
+        repository=repository,
+        manifest=manifest,
+        actor_id=actor_id,
+        request_id=request_id,
+        idempotency_key=idempotency_key,
+        event_id=event_id,
+        occurred_at=occurred_at,
+    )

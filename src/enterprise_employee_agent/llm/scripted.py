@@ -10,23 +10,30 @@ Used by the offline eval run and tests. It is never a recording of a real provid
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from decimal import Decimal
 
 from enterprise_employee_agent.llm.provider import AnswerRequest, ProviderResponse, Usage
 
 
 class ScriptedProvider:
-    def __init__(self, responses: Mapping[str, str]) -> None:
+    def __init__(
+        self,
+        responses: Mapping[str, str],
+        *,
+        key: Callable[[AnswerRequest], str] = lambda r: r.question,
+    ) -> None:
         self._responses = dict(responses)
+        self._key = key
         self.requests: list[AnswerRequest] = []
 
     def complete(self, request: AnswerRequest) -> ProviderResponse:
         self.requests.append(request)
+        lookup_key = self._key(request)
         try:
-            content = self._responses[request.question]
+            content = self._responses[lookup_key]
         except KeyError as error:
-            raise LookupError(f"no scripted response for question: {request.question!r}") from error
+            raise LookupError(f"no scripted response for key: {lookup_key!r}") from error
         return ProviderResponse(
             content=content,
             usage=Usage(input_tokens=0, output_tokens=0, cost_usd=Decimal("0")),

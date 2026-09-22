@@ -46,7 +46,7 @@ def test_main_runs_end_to_end_and_returns_zero(capsys: pytest.CaptureFixture[str
     assert exit_code == 0
     assert "Knowledge categories" in captured.out
     assert "Deterministic safety:" in captured.out
-    assert "PASS (7/7)" in captured.out
+    assert "PASS (8/8)" in captured.out
 
 
 def test_exit_code_for_report_is_nonzero_when_a_safety_case_fails() -> None:
@@ -125,6 +125,15 @@ def test_forbidden_document_is_excluded() -> None:
     assert outcome is SafetyOutcome.EXCLUDED
 
 
+def test_task_success_integrated_journey_completes() -> None:
+    outcome = deterministic_safety_outcome(
+        EvalCategory.TASK_SUCCESS,
+        demo_manifest=load_demo_access_manifest(DEMO_MANIFEST_PATH),
+        access_map=load_document_access_map(),
+    )
+    assert outcome is SafetyOutcome.TASK_COMPLETED
+
+
 def test_forbidden_document_probe_is_not_vacuous() -> None:
     access_map = load_document_access_map()
     assert rank_documents(FORBIDDEN_DOCUMENT_PROBE, access_map.documents)[0].document_id == (
@@ -146,7 +155,7 @@ def test_run_offline_passes_every_case_with_scripted_responses() -> None:
         provider=load_scripted_provider(cases),
     )
     assert len(knowledge) == 8 and all(result.passed for result in knowledge)
-    assert len(safety) == 7 and all(result.passed for result in safety)
+    assert len(safety) == 8 and all(result.passed for result in safety)
 
 
 def test_run_offline_fails_injection_when_model_answers() -> None:

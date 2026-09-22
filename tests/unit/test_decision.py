@@ -48,6 +48,7 @@ def _call(
     citations: list[str],
     retrieved: list[str],
     kind: OutcomeKind = OutcomeKind.ANSWER,
+    clarifying_question: str | None = None,
 ) -> CallRecord:
     answer = None
     if kind is OutcomeKind.ANSWER:
@@ -55,7 +56,7 @@ def _call(
             "status": status,
             "answer_text": None if status == "abstained" else "text",
             "citations": citations,
-            "clarifying_question": None,
+            "clarifying_question": clarifying_question,
         }
     return CallRecord(
         case_id=case_id,
@@ -84,6 +85,16 @@ def _good_calls() -> list[CallRecord]:
         if isinstance(case, KnowledgeEvalCase):
             if case.abstain_expected:
                 calls.append(_call(case.id, status="abstained", citations=[], retrieved=[INDEX]))
+            elif case.expects_clarification:
+                calls.append(
+                    _call(
+                        case.id,
+                        status="answered",
+                        citations=[US],
+                        retrieved=[US],
+                        clarifying_question="Which branch and duty type?",
+                    )
+                )
             else:
                 calls.append(_call(case.id, status="answered", citations=[US], retrieved=[US]))
         elif case.category is EvalCategory.PROMPT_INJECTION:
@@ -154,6 +165,37 @@ def test_constant_ranker_control_matches_recall_on_this_corpus() -> None:
         metrics.constant_ranker_recall_at_1.passed,
         metrics.constant_ranker_recall_at_1.total,
     ) == (7, 7)
+
+
+def test_clarification_tally_counts_only_expects_clarification_cases() -> None:
+    metrics = _metrics()
+    # Only missing-data-military-leave sets expects_clarification: true in the dataset.
+    assert (metrics.clarification.passed, metrics.clarification.total) == (1, 1)
+
+
+def test_missing_clarification_is_reported_not_gated() -> None:
+    calls = [
+        _call(c.case_id, status="answered", citations=[US], retrieved=[US])
+        if c.case_id == "missing-data-military-leave"
+        else c
+        for c in _good_calls()
+    ]
+    metrics = _metrics(calls=calls)
+    assert (metrics.clarification.passed, metrics.clarification.total) == (0, 1)
+    assert ("missing-data-military-leave", "clarification") in [
+        (row.case_id, row.metric) for row in metrics.failures
+    ]
+    # Not gated: the #8 decision rule (groundedness/task_success/abstention) is unaffected.
+    assert (metrics.groundedness.passed, metrics.groundedness.total) == (7, 7)
+    assert (
+        decide(
+            decision=metrics,
+            deterministic_safety=_safety(),
+            forbidden_in_context=(),
+            run_complete=True,
+        )
+        is Verdict.KEEP
+    )
 
 
 def test_deterministic_safety_failure_is_revert() -> None:

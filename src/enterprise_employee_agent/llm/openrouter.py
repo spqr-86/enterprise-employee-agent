@@ -70,6 +70,10 @@ class OpenRouterProvider:
         self._clock = clock
 
     def build_payload(self, request: AnswerRequest) -> dict[str, Any]:
+        schema_name, schema_body = request.response_schema or (
+            ANSWER_SCHEMA_NAME,
+            ANSWER_JSON_SCHEMA,
+        )
         payload: dict[str, Any] = {
             "model": request.model.model_id,
             "messages": [
@@ -80,9 +84,9 @@ class OpenRouterProvider:
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
-                    "name": ANSWER_SCHEMA_NAME,
+                    "name": schema_name,
                     "strict": True,
-                    "schema": ANSWER_JSON_SCHEMA,
+                    "schema": schema_body,
                 },
             },
             "provider": {"require_parameters": True},

@@ -325,3 +325,101 @@
   package boundary, not a new top-level package. No code was written — planning only. Next:
   implement the plan (a fresh session was recommended to start it, this one having grown to
   ~106K tokens of planning context).
+- 2026-09-22 (third/fourth/fifth sessions): Implementing the Issue #13 plan via
+  subagent-driven-development in worktree `.claude/worktrees/issue-13-integrate-grounded-answers`
+  (branch `worktree-issue-13-integrate-grounded-answers`), one fresh implementer + one fresh
+  reviewer subagent per step, ledger at
+  `.superpowers/sdd/2026-09-22-issue-13-integrate-grounded-answers/progress.md`. Step 1 (fix
+  Issue #28 — typed `WorkflowError(FORBIDDEN/UNAUTHORIZED)` from `bind_server_command`, commit
+  `966c310`) and Step 2 (`tests/integration/conftest.py` scaffolding, commit `de8d9c2`) landed
+  clean. Step 3 (`leave/assistant.py`: `AssistantOutcomeKind`, `GroundedAnswer`,
+  `AssistantOutcome`, `answer_for_actor` — deterministic mapping from the knowledge pipeline's
+  `OutcomeKind`/`AnswerStatus` onto typed outcomes, with an exhaustive `match` and no
+  eligibility/jurisdiction logic per the plan's D-D) landed clean, commit `0521823`, 307/307
+  tests, review Approved with only two deferred-minor findings (dead assertions in
+  `tests/unit/test_leave_assistant.py`, real invariants covered elsewhere). The `task-brief`
+  script remains incompatible with the plan's `### Step N` headers, so each step's brief is
+  still assembled by hand from the plan file — third step running on this workaround without
+  issue. Branch stays unpushed to `origin` until all 12 steps and the final whole-branch review
+  land (single PR for the whole plan). Step 4 (`create_draft_from_fields`/
+  `provide_clarification_from_fields`, AC-1 write path, commit `a70f774`) landed after one fix
+  round: initial review approved the production code (server-supplied invariant honored — no
+  internal `uuid4()`/`datetime.now()`, no branching on payload/question/model output — D-C/D-D
+  honored, existing interfaces used correctly) but flagged one Important plan-mandated gap: the
+  new integration test read stored state for its digest comparison via `repository.get(...)`
+  directly instead of via `access_policy.project_for`, contradicting the brief's explicit
+  interface note. Fix (commit `7567e58`) rebuilt the payload from an `EmployeeLeaveProjection`
+  instead; re-review confirmed addressed, no new breakage. 309/309 tests. Step 5 (`build_clarification_request` in `leave/assistant.py`, commit `f34f0ed`)
+  landed clean on the first review: an explicit guard chain (kind is `UNAVAILABLE`/`ABSTAINED` →
+  empty citations → blank/missing `clarifying_question` → length) rejects Step 3's two
+  `ABSTAINED` sources (`NO_EVIDENCE` and `ANSWER`+`AnswerStatus.ABSTAINED`) uniformly with a
+  single check, resolving the Step 3 design note as-is with no special-casing needed; the
+  question text is the model's `clarifying_question` plus a code-built `" (source: <ids>)"`
+  suffix built only from `GroundedAnswer.citations` (never retrieved document text), truncated
+  to fit `RequestClarificationInput`'s `max_length=500` with a `ValidationError` backstop so
+  nothing untyped escapes; no role/actor check inside the function (D-D) — an integration test
+  proves an employee actor gets a typed `WorkflowError(FORBIDDEN)` via the real
+  `bind_server_command` path with byte-identical stored state. 317/317 tests, review Approved,
+  0 Critical/Important findings. Step 6 (`leave/field_proposal.py`: `LeaveFieldProposal`
+  contract + `parse_field_proposal()`, plus `prompts/leave-fields-v1/{system.md,user.md}`, per
+  D-B, commit `7673169`) landed clean on the first review: `missing_fields()` is computed by
+  code from which of the three required fields are `None`, never read from model output;
+  `to_payload()` builds a `LeaveRequestPayload` only when complete, raising
+  `WorkflowError(VALIDATION_FAILED)` otherwise, with a `ValidationError` backstop so nothing
+  untyped escapes; `parse_field_proposal()` mirrors `parse_answer()`'s JSON→pydantic→typed-error
+  shape but with only two failure stages (no citation check — field proposals carry none); the
+  extraction prompt templates only `{detail_text}`, never retrieved document text.
+  328/328 tests, review Approved, 0 Critical/Important, two deferred minors (an unused
+  schema-name constant provisioned for Step 7; a defence-in-depth branch under-commented at its
+  own site). Next: Step 7 (`propose_leave_fields` orchestration + proposal→command bridge),
+  which also carries the `ScriptedProvider(key=...)` addition deferred from D-E's Step 3 ruling.
+  Step 7 (commit `f06c362`) added `propose_leave_fields`, `build_create_draft_input` and
+  `create_draft_from_proposal` (delegating to Step 4's `create_draft_from_fields`, no second
+  write path) plus the backward-compatible `ScriptedProvider(key=...)`; 341/341 tests, review
+  Approved first time. Step 8 (commits `c37d880`, `4e28551`) is a test-only module,
+  `tests/integration/test_assistant_failure_paths.py`, covering all eleven failure-path rows
+  (invalid JSON, schema, citation not retrieved, timeout, 503, prompt injection with a refusing
+  and an obedient model, role spoofing, forbidden document before context, forbidden content in
+  records, non-US question); each seeds a real draft and asserts it unchanged. Role spoofing
+  surfaces as `WorkflowError(FORBIDDEN)` in both directions. One review round: the
+  citation-not-retrieved row now pins that a model-fabricated document id appears only in
+  `AssistantFailure.detail` (diagnostic, from `ContractViolation.detail`), never in answer,
+  guidance or citations — a known limitation for Issue #14: the UI must not render that field.
+  353/353 tests. Next: Step 9 (wire `expects_clarification` into the eval scorer). Step 9 (commit `92cbf85`) scores `expects_clarification`:
+  `KnowledgeCaseResult.clarification_ok`, a separate reported-only `clarification` count in
+  `evals/decision.py` (recall tally kept numerically identical, no gate change). Re-scoring the
+  stored #8 run gives clarification 1/1 for gpt-5-mini and 0/1 for deepseek-v3.2 — the documented
+  "answered before clarifying" failure, now an explicit number. The decision CLI refuses to
+  re-score that run on this branch (pre-existing `source_changed_since()` staleness gate), so the
+  figure came from `compute_model_metrics()` directly. Review Approved first time. Next: Step 10.
+  Step 10 (commit `b753df5`) adds the integrated eval case: `EvalCategory.TASK_SUCCESS` in the
+  safety group, `SafetyOutcome.TASK_COMPLETED`, and `_score_integrated_journey` in `evals/run.py`
+  (supported question → cited evidence → versioned preview with matching digest; Germany question
+  abstains; contract-violation variant leaves the repository unchanged). Deterministic safety
+  8/8, 360 tests. Adding the case changes the dataset hash, so the decision CLI cannot re-score
+  stored run #8 on this branch (it already refused). Review Approved first time. Next: Step 11.
+  Step 11 (commit `180e1f2`) closes the implementation steps: `tests/smoke/test_assistant_journey_smoke.py`
+  drives the whole AC-1 sentence through the orchestrator (ask → cited evidence → missing fields →
+  fields provided → versioned preview → confirm → `SUBMITTED` → HR clarification built from the
+  grounded answer → re-answer → re-preview → re-submit → `START_PROCESSING` → the three
+  `project_for` projections), with confirm/submit/projections going through the ordinary
+  `bind_server_command`/`repository.execute` path (D-D forbids new orchestration for them). Same
+  commit adds the ANCHOR block to `leave/assistant.py`, ADR
+  `docs/decisions/0005-v0.1-field-proposal-separate-from-answer-contract.md`, and the PLAN.md §6/§7
+  update (#28 closed by this PR; §5/§9 untouched). 361 tests, smoke 9, eval-offline 100% with
+  deterministic safety 8/8; the smoke test was checked non-vacuous by swapping in a bogus citation
+  and seeing it fail. Review Approved with no findings at any severity. Next: final whole-branch
+  review (Step 12 folded into it), then the PR.
+- 2026-09-22 (session 15): Final whole-branch review of Issue #13 (opus, 21 commits) returned
+  "With fixes": 0 Critical, 2 Important. I-1: `OpenRouterProvider.build_payload` always sent the
+  answer schema, so `propose_leave_fields` could never work against a live provider — fixed with
+  an optional `AnswerRequest.response_schema` (default byte-identical) wired to the field-proposal
+  schema. I-2: `build_clarification_request` did not check that citations are readable by the
+  employee, so an HR-scoped answer could leak an HR-only doc id into the employee-visible
+  clarification — now rejected with `VALIDATION_FAILED`. M-3: `</detail>` breakout in the
+  extraction prompt escaped (answer-v1's `</document>` analogue carried). Scoped re-review
+  approved. Step 12 at 8b70903: check clean, 366 tests, smoke 9, eval-offline 100%, safety 8/8;
+  run #8 re-scored via `compute_model_metrics()`: gpt-5-mini recall 7/7 clarification 1/1,
+  deepseek-v3.2 recall 6/7 clarification 0/1. PR #30 opened, CI green, mergeable. Next: Petr
+  merges; then fill PR number/merge SHA in PLAN.md §6, remove the worktree, move to #14 (UI must
+  not render `AssistantFailure.detail`, provider HTTP errors or extraction key names).
