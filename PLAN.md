@@ -170,7 +170,8 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   duplicate the smoke `conftest.py` fixtures rather than sharing them; the `leave-fields-v1`
   extraction prompt has no live eval yet (unmeasured, not broken — see ADR 0005's consequences);
   `AssistantFailure.detail` may contain model-fabricated document ids and must not be rendered
-  as-is by Issue #14's UI.
+  as-is by Issue #14's UI. PR #30 squash-merged as `eb2b51d`, hosted CI green; Issues #13 and
+  #28 closed; `main` re-verified (366/366 tests, 9/9 smoke).
 - No HTTP/UI or external integration exists yet; the frozen corpus and local workflow remain
   offline.
 
