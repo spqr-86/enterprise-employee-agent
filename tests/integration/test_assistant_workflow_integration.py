@@ -5,7 +5,9 @@ Exercises the full journey a real caller takes after getting an ``ANSWERED`` out
 confirming it lands the request in ``SUBMITTED``. Every mutation goes through
 ``bind_server_command`` + ``repository.execute`` (via ``create_draft_from_fields``,
 ``provide_clarification_from_fields`` and the smoke journey's ``_run`` helper for the confirm
-and HR-clarification-request steps); every read goes through ``access_policy.project_for``.
+and HR-clarification-request steps); every read the test itself performs goes through
+``access_policy.project_for`` (including the digest checks, which rebuild the payload from the
+employee's own projection rather than reading ``repository.get`` directly).
 """
 
 # ANCHOR: Covers create_draft_from_fields and provide_clarification_from_fields end to end,
@@ -57,6 +59,16 @@ def _payload(*, comment: str) -> LeaveRequestPayload:
     )
 
 
+def _payload_from_projection(projection: EmployeeLeaveProjection) -> LeaveRequestPayload:
+    """Rebuild the payload from a role projection, never from a direct ``repository.get``."""
+    return LeaveRequestPayload(
+        start_date=projection.start_date,
+        end_date=projection.end_date,
+        request_type=projection.request_type,
+        employee_comment=projection.employee_comment,
+    )
+
+
 def test_answer_then_typed_fields_reach_a_versioned_preview(manifest, repository, access_map):
     # 1. Ask a supported US question and assert ANSWERED with citations.
     scripted_answer = json.dumps(
@@ -94,9 +106,13 @@ def test_answer_then_typed_fields_reach_a_versioned_preview(manifest, repository
     )
     assert preview.request_id == REQUEST_ID
     assert preview.request_version == 1
-    stored = repository.get(REQUEST_ID)
-    assert stored is not None
-    assert preview.confirmation.payload_digest == payload_digest(stored.payload)
+    draft = repository.get(REQUEST_ID)
+    assert draft is not None
+    draft_view = project_for(manifest, resolve_identity(manifest, ACTOR_ID), draft)
+    assert isinstance(draft_view, EmployeeLeaveProjection)
+    assert preview.confirmation.payload_digest == payload_digest(
+        _payload_from_projection(draft_view)
+    )
 
     # 3. Confirm the preview: draft -> submitted.
     submitted = _run(
@@ -180,9 +196,13 @@ def test_provide_clarification_from_fields_reaches_a_new_versioned_preview(
     )
     assert preview.request_version == 4
     assert preview.payload.employee_comment == "Confirmed: consecutive business days only"
-    stored = repository.get(needs_clarification.request_id)
-    assert stored is not None
-    assert preview.confirmation.payload_digest == payload_digest(stored.payload)
+    clarified = repository.get(needs_clarification.request_id)
+    assert clarified is not None
+    clarified_view = project_for(manifest, resolve_identity(manifest, ACTOR_ID), clarified)
+    assert isinstance(clarified_view, EmployeeLeaveProjection)
+    assert preview.confirmation.payload_digest == payload_digest(
+        _payload_from_projection(clarified_view)
+    )
 
     # Confirm again: needs_clarification -> submitted.
     resubmitted = _run(
