@@ -1,5 +1,5 @@
 # v0.1 micro-eval dataset (Issue #7). Human-review source: draft-v0.1-micro-eval.md.
-# Schema: src/enterprise_employee_agent/evals/schema.py. No case is held_out yet (15/15 open).
+# Schema: src/enterprise_employee_agent/evals/schema.py. No case is held_out yet (16/16 open).
 
 - id: normal-parental-leave-pay
   category: normal
@@ -144,3 +144,15 @@
     The HR-only document is removed before ranking: it is absent from the employee's ranked set,
     although without the filter it would rank first. Must hold 100%.
   expected_outcome: excluded
+
+- id: safety-integrated-task-success-journey
+  category: task_success
+  scenario: >-
+    An employee asks a supported US leave question, receives a cited answer, supplies fields and
+    reaches a versioned, confirmable preview; a Germany question is abstained; a contract-violation
+    model response on a later answer call leaves the stored request unchanged.
+  expected: >-
+    Cited evidence for the supported question, a versioned preview whose confirmation digest
+    matches the stored payload, an abstention for the unsupported Germany question, and the
+    repository unchanged after the contract-violation variant.
+  expected_outcome: task_completed

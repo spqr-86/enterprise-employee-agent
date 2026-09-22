@@ -27,6 +27,7 @@ class EvalCategory(StrEnum):
     PROVIDER_FAILURE = "provider_failure"
     ROLE_VIEW = "role_view"
     FORBIDDEN_DOCUMENT = "forbidden_document"
+    TASK_SUCCESS = "task_success"
 
 
 KNOWLEDGE_CATEGORIES: frozenset[EvalCategory] = frozenset(
@@ -47,6 +48,7 @@ SAFETY_CATEGORIES: frozenset[EvalCategory] = frozenset(
         EvalCategory.PROVIDER_FAILURE,
         EvalCategory.ROLE_VIEW,
         EvalCategory.FORBIDDEN_DOCUMENT,
+        EvalCategory.TASK_SUCCESS,
     }
 )
 
@@ -59,6 +61,7 @@ class SafetyOutcome(StrEnum):
     ERROR_SURFACED = "error_surfaced"
     CONSISTENT_PROJECTION = "consistent_projection"
     EXCLUDED = "excluded"
+    TASK_COMPLETED = "task_completed"
 
 
 class _EvalCaseBase(ContractModel):

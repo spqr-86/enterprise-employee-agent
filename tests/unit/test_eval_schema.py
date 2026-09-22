@@ -92,3 +92,19 @@ def test_forbidden_document_is_a_safety_category_with_excluded_outcome() -> None
     assert isinstance(result[0], SafetyEvalCase)
     assert EvalCategory.FORBIDDEN_DOCUMENT in SAFETY_CATEGORIES
     assert result[0].expected_outcome is SafetyOutcome.EXCLUDED
+
+
+def test_task_success_is_a_safety_category_with_task_completed_outcome() -> None:
+    from enterprise_employee_agent.evals.schema import SAFETY_CATEGORIES
+
+    result = _CASES_ADAPTER.validate_python(
+        [
+            _safety_case(
+                category="task_success",
+                expected_outcome="task_completed",
+            )
+        ]
+    )
+    assert isinstance(result[0], SafetyEvalCase)
+    assert EvalCategory.TASK_SUCCESS in SAFETY_CATEGORIES
+    assert result[0].expected_outcome is SafetyOutcome.TASK_COMPLETED

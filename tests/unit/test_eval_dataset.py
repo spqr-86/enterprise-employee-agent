@@ -16,8 +16,8 @@ def test_v0_1_dataset_loads_and_validates_against_the_real_manifest() -> None:
     validate_dataset(cases, document_ids)
 
 
-def test_v0_1_dataset_has_fifteen_cases() -> None:
-    assert len(load_cases(DATASET_PATH)) == 15
+def test_v0_1_dataset_has_sixteen_cases() -> None:
+    assert len(load_cases(DATASET_PATH)) == 16
 
 
 def test_v0_1_dataset_has_the_forbidden_document_case() -> None:
