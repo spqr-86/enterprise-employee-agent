@@ -33,7 +33,11 @@ from enterprise_employee_agent.leave.contracts import (
     WorkflowErrorCode,
     load_demo_access_manifest,
 )
-from enterprise_employee_agent.leave.field_proposal import LeaveFieldProposal
+from enterprise_employee_agent.leave.field_proposal import (
+    LEAVE_FIELD_PROPOSAL_JSON_SCHEMA,
+    LEAVE_FIELD_PROPOSAL_SCHEMA_NAME,
+    LeaveFieldProposal,
+)
 from enterprise_employee_agent.llm.contract import AnswerStatus, ViolationKind
 from enterprise_employee_agent.llm.provider import AnswerRequest, ModelConfig, ProviderErrorKind
 from enterprise_employee_agent.llm.scripted import ScriptedProvider

@@ -63,6 +63,8 @@ from enterprise_employee_agent.leave.contracts import (
     build_leave_preview,
 )
 from enterprise_employee_agent.leave.field_proposal import (
+    LEAVE_FIELD_PROPOSAL_JSON_SCHEMA,
+    LEAVE_FIELD_PROPOSAL_SCHEMA_NAME,
     LeaveFieldProposal,
     parse_field_proposal,
 )
@@ -424,6 +426,7 @@ def propose_leave_fields(
         user_prompt=_render_field_proposal_user_prompt(prompt, detail_text),
         question=detail_text,
         retrieved_ids=(),
+        response_schema=(LEAVE_FIELD_PROPOSAL_SCHEMA_NAME, LEAVE_FIELD_PROPOSAL_JSON_SCHEMA),
     )
     try:
         response = provider.complete(request)
