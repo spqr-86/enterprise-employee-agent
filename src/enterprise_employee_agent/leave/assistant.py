@@ -17,6 +17,19 @@ only code-owned judgement here is the deterministic ``(OutcomeKind, AnswerStatus
 ``AssistantOutcomeKind`` mapping and the referral guidance text.
 """
 
+# ANCHOR: No function in this module accepts a DemoIdentity parameter — only a server-selected
+# actor_id, resolved internally via access_policy.resolve_identity, exactly like
+# bind_server_command does for commands. Unvalidated model prose never survives into a returned
+# outcome: a contract violation or provider failure always maps to UNAVAILABLE with answer/
+# proposal None, never a half-parsed answer_text or an invented field. This module owns no
+# eligibility or jurisdiction logic — whether a question is answerable is decided by the model's
+# own AnswerStatus plus the upstream retrieval access filter, never by a check written here.
+# Referral text (_REFERRAL_GUIDANCE, _ANSWERED_GUIDANCE, _UNAVAILABLE_GUIDANCE) is a code-owned
+# constant, never model-generated. Nothing here auto-confirms: create_draft_from_proposal and
+# create_draft_from_fields only reach DRAFT; submission stays a separate explicit employee act on
+# a build_leave_preview envelope (bind_server_command + repository.execute), which this module
+# never calls on the employee's behalf.
+
 from __future__ import annotations
 
 import re

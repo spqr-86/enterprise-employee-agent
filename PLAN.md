@@ -147,22 +147,32 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   the inconsistency is filed as non-blocking follow-up **Issue #28**. PR #29 squash-merged as
   `e70ed9c`, hosted CI green; Issue #12 closed; `main` re-verified (301/301 tests, 7/7 smoke via
   `make eval-smoke`).
+- Issue #13 (integrate grounded answers with the typed workflow) built `leave/assistant.py`
+  (`answer_for_actor`, `propose_leave_fields`, `create_draft_from_proposal`,
+  `build_clarification_request`, `provide_clarification_from_fields`/`create_draft_from_fields`)
+  and `leave/field_proposal.py` (`LeaveFieldProposal`, `parse_field_proposal`) with a new,
+  separate `prompts/leave-fields-v1/` template — the knowledge `answer-v1` contract stays frozen
+  (`docs/decisions/0005-v0.1-field-proposal-separate-from-answer-contract.md`). Integration tests
+  and a failure-path matrix cover the read (answer) and write (draft/clarification) sides; a
+  `task_success` eval case exercises the integrated journey; `tests/smoke/` gained a second smoke
+  test composing the full orchestrator-driven journey end to end. Non-blocking Issue #28
+  (`bind_server_command`'s untyped `ValueError` for a role/command mismatch) is fixed in this PR:
+  it now raises a typed `WorkflowError(FORBIDDEN)`/`WorkflowError(UNAUTHORIZED)`. Known
+  limitations: `WorkflowErrorCode.SENSITIVE_CONTENT_REJECTED` is still unused; the integration
+  test fixtures duplicate the smoke `conftest.py` fixtures rather than sharing them; the
+  `leave-fields-v1` extraction prompt has no live eval yet; `AssistantFailure.detail` may contain
+  model-fabricated document ids and must not be rendered as-is by Issue #14's UI.
 - No HTTP/UI or external integration exists yet; the frozen corpus and local workflow remain
   offline.
 
 ## 7. Next steps
 
-1. Integrate the knowledge and workflow paths (Issue #13): connect the measured retrieval/answer
-   path to the typed workflow — clarification/preview driven by grounded model output, not just
-   manual HR commands — building on the `tests/smoke/` composition pattern from Issue #12.
-2. Decide and resolve non-blocking Issue #28 (`bind_server_command`'s untyped `ValueError` for a
-   role/command mismatch) — before or alongside Issue #14, since #14 wires this path to a real
-   HTTP server that needs a clean error mapping.
-3. Build the server-rendered FastAPI interface with minimal CSS and no SPA framework, applying
-   `project_for` to every response, and closing the `get()`/raw-`sqlite3`-exception gaps carried
-   over from Issue #10 (Issue #14).
-4. Complete Docker Compose, offline CI, README, and clean-clone verification (Issue #15).
-5. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
+1. Build the server-rendered FastAPI interface with minimal CSS and no SPA framework, applying
+   `project_for` to every response, closing the `get()`/raw-`sqlite3`-exception gaps carried over
+   from Issue #10, and never rendering `AssistantFailure.detail` as-is (it may contain
+   model-fabricated document ids) (Issue #14).
+2. Complete Docker Compose, offline CI, README, and clean-clone verification (Issue #15).
+3. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
    limits, and release decision (Issue #16).
 
 ## 8. Open decisions
