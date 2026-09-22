@@ -128,20 +128,40 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   un-authorized/un-projected full records, safe only because no public caller exists yet (→
   Issue #14); raw `sqlite3` exceptions and unclosed connections are unsafe under a live server (→
   Issue #14, before FastAPI is wired up).
+- Issue #11 (version-bound confirmation and idempotency) is integrated into `main`: PR #27
+  squash-merged as `37ff0b1`; 289/289 tests passed.
+- Issue #12 (offline fake-adapter vertical slice) is integrated into `main` on 2026-09-22:
+  `tests/smoke/` composes the full employee-to-HR-to-manager leave journey — draft, versioned
+  preview, explicit confirmation, HR clarification round-trip, HR processing, and exact
+  employee/manager/HR projections — plus a standalone knowledge-slice answer through the
+  existing deterministic `ScriptedProvider`, entirely through public application boundaries
+  (`bind_server_command`+`repository.execute`, `access_policy.project_for`). Four negative
+  variants cover forbidden access, stale confirmation, duplicate submission, and fake-provider
+  failure (the last proves via before/after repository snapshots that a provider error never
+  touches storage). No `src/` change was needed — `state_machine` and `access_policy` already
+  supported every transition/projection required. Independent review found `bind_server_command`
+  raises a bare `ValueError` for a role/command mismatch instead of a typed
+  `WorkflowError(FORBIDDEN)`; the negative test now asserts that real behavior explicitly, and
+  the inconsistency is filed as non-blocking follow-up **Issue #28**. PR #29 squash-merged as
+  `e70ed9c`, hosted CI green; Issue #12 closed; `main` re-verified (301/301 tests, 7/7 smoke via
+  `make eval-smoke`).
 - No HTTP/UI or external integration exists yet; the frozen corpus and local workflow remain
   offline.
 
 ## 7. Next steps
 
-1. Implement version-bound confirmation, idempotency, and the fake-adapter vertical slice in
-   Issue #11, calling `access_policy` rather than re-deriving access (D1/D2), and closing the
-   `payload_digest` validation gap carried over from the #10 review.
-2. Integrate the knowledge and workflow paths, then build a server-rendered FastAPI interface
-   with minimal CSS and no SPA framework, applying `project_for` to every response per the
-   authorization findings carried over from #10 into Issue #14.
-3. Complete Docker Compose, offline CI, README, and clean-clone verification.
-4. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
-   limits, and release decision.
+1. Integrate the knowledge and workflow paths (Issue #13): connect the measured retrieval/answer
+   path to the typed workflow — clarification/preview driven by grounded model output, not just
+   manual HR commands — building on the `tests/smoke/` composition pattern from Issue #12.
+2. Decide and resolve non-blocking Issue #28 (`bind_server_command`'s untyped `ValueError` for a
+   role/command mismatch) — before or alongside Issue #14, since #14 wires this path to a real
+   HTTP server that needs a clean error mapping.
+3. Build the server-rendered FastAPI interface with minimal CSS and no SPA framework, applying
+   `project_for` to every response, and closing the `get()`/raw-`sqlite3`-exception gaps carried
+   over from Issue #10 (Issue #14).
+4. Complete Docker Compose, offline CI, README, and clean-clone verification (Issue #15).
+5. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
+   limits, and release decision (Issue #16).
 
 ## 8. Open decisions
 
