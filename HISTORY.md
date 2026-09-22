@@ -398,3 +398,15 @@
   abstains; contract-violation variant leaves the repository unchanged). Deterministic safety
   8/8, 360 tests. Adding the case changes the dataset hash, so the decision CLI cannot re-score
   stored run #8 on this branch (it already refused). Review Approved first time. Next: Step 11.
+  Step 11 (commit `180e1f2`) closes the implementation steps: `tests/smoke/test_assistant_journey_smoke.py`
+  drives the whole AC-1 sentence through the orchestrator (ask → cited evidence → missing fields →
+  fields provided → versioned preview → confirm → `SUBMITTED` → HR clarification built from the
+  grounded answer → re-answer → re-preview → re-submit → `START_PROCESSING` → the three
+  `project_for` projections), with confirm/submit/projections going through the ordinary
+  `bind_server_command`/`repository.execute` path (D-D forbids new orchestration for them). Same
+  commit adds the ANCHOR block to `leave/assistant.py`, ADR
+  `docs/decisions/0005-v0.1-field-proposal-separate-from-answer-contract.md`, and the PLAN.md §6/§7
+  update (#28 closed by this PR; §5/§9 untouched). 361 tests, smoke 9, eval-offline 100% with
+  deterministic safety 8/8; the smoke test was checked non-vacuous by swapping in a bogus citation
+  and seeing it fail. Review Approved with no findings at any severity. Next: final whole-branch
+  review (Step 12 folded into it), then the PR.
