@@ -360,4 +360,16 @@
   nothing untyped escapes; no role/actor check inside the function (D-D) — an integration test
   proves an employee actor gets a typed `WorkflowError(FORBIDDEN)` via the real
   `bind_server_command` path with byte-identical stored state. 317/317 tests, review Approved,
-  0 Critical/Important findings. Next: Step 6 (`LeaveFieldProposal` contract and parser, D-B).
+  0 Critical/Important findings. Step 6 (`leave/field_proposal.py`: `LeaveFieldProposal`
+  contract + `parse_field_proposal()`, plus `prompts/leave-fields-v1/{system.md,user.md}`, per
+  D-B, commit `7673169`) landed clean on the first review: `missing_fields()` is computed by
+  code from which of the three required fields are `None`, never read from model output;
+  `to_payload()` builds a `LeaveRequestPayload` only when complete, raising
+  `WorkflowError(VALIDATION_FAILED)` otherwise, with a `ValidationError` backstop so nothing
+  untyped escapes; `parse_field_proposal()` mirrors `parse_answer()`'s JSON→pydantic→typed-error
+  shape but with only two failure stages (no citation check — field proposals carry none); the
+  extraction prompt templates only `{detail_text}`, never retrieved document text.
+  328/328 tests, review Approved, 0 Critical/Important, two deferred minors (an unused
+  schema-name constant provisioned for Step 7; a defence-in-depth branch under-commented at its
+  own site). Next: Step 7 (`propose_leave_fields` orchestration + proposal→command bridge),
+  which also carries the `ScriptedProvider(key=...)` addition deferred from D-E's Step 3 ruling.
