@@ -157,11 +157,20 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   `task_success` eval case exercises the integrated journey; `tests/smoke/` gained a second smoke
   test composing the full orchestrator-driven journey end to end. Non-blocking Issue #28
   (`bind_server_command`'s untyped `ValueError` for a role/command mismatch) is fixed in this PR:
-  it now raises a typed `WorkflowError(FORBIDDEN)`/`WorkflowError(UNAUTHORIZED)`. Known
-  limitations: `WorkflowErrorCode.SENSITIVE_CONTENT_REJECTED` is still unused; the integration
-  test fixtures duplicate the smoke `conftest.py` fixtures rather than sharing them; the
-  `leave-fields-v1` extraction prompt has no live eval yet; `AssistantFailure.detail` may contain
-  model-fabricated document ids and must not be rendered as-is by Issue #14's UI.
+  it now raises a typed `WorkflowError(FORBIDDEN)`/`WorkflowError(UNAUTHORIZED)`. A final-review
+  fix wave (post-PR, same issue) closed two cross-task gaps the per-task reviews missed:
+  `AnswerRequest` gained an optional `response_schema` so `propose_leave_fields` sends
+  `LEAVE_FIELD_PROPOSAL_SCHEMA_NAME`/`LEAVE_FIELD_PROPOSAL_JSON_SCHEMA` instead of the answer
+  contract's schema (I-1 — the live provider would otherwise reject every extraction call as a
+  schema violation); and `build_clarification_request` now takes `access_map` and rejects any
+  answer whose citations are not all employee-readable, since the built question is projected
+  straight to the employee (I-2). It also escapes a literal `</detail>` in the employee's own
+  text before it reaches the `leave-fields-v1` prompt (M-3). Known limitations:
+  `WorkflowErrorCode.SENSITIVE_CONTENT_REJECTED` is still unused; the integration test fixtures
+  duplicate the smoke `conftest.py` fixtures rather than sharing them; the `leave-fields-v1`
+  extraction prompt has no live eval yet (unmeasured, not broken — see ADR 0005's consequences);
+  `AssistantFailure.detail` may contain model-fabricated document ids and must not be rendered
+  as-is by Issue #14's UI.
 - No HTTP/UI or external integration exists yet; the frozen corpus and local workflow remain
   offline.
 
