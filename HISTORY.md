@@ -385,4 +385,10 @@
   citation-not-retrieved row now pins that a model-fabricated document id appears only in
   `AssistantFailure.detail` (diagnostic, from `ContractViolation.detail`), never in answer,
   guidance or citations — a known limitation for Issue #14: the UI must not render that field.
-  353/353 tests. Next: Step 9 (wire `expects_clarification` into the eval scorer).
+  353/353 tests. Next: Step 9 (wire `expects_clarification` into the eval scorer). Step 9 (commit `92cbf85`) scores `expects_clarification`:
+  `KnowledgeCaseResult.clarification_ok`, a separate reported-only `clarification` count in
+  `evals/decision.py` (recall tally kept numerically identical, no gate change). Re-scoring the
+  stored #8 run gives clarification 1/1 for gpt-5-mini and 0/1 for deepseek-v3.2 — the documented
+  "answered before clarifying" failure, now an explicit number. The decision CLI refuses to
+  re-score that run on this branch (pre-existing `source_changed_since()` staleness gate), so the
+  figure came from `compute_model_metrics()` directly. Review Approved first time. Next: Step 10.
