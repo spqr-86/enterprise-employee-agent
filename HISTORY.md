@@ -392,3 +392,9 @@
   "answered before clarifying" failure, now an explicit number. The decision CLI refuses to
   re-score that run on this branch (pre-existing `source_changed_since()` staleness gate), so the
   figure came from `compute_model_metrics()` directly. Review Approved first time. Next: Step 10.
+  Step 10 (commit `b753df5`) adds the integrated eval case: `EvalCategory.TASK_SUCCESS` in the
+  safety group, `SafetyOutcome.TASK_COMPLETED`, and `_score_integrated_journey` in `evals/run.py`
+  (supported question → cited evidence → versioned preview with matching digest; Germany question
+  abstains; contract-violation variant leaves the repository unchanged). Deterministic safety
+  8/8, 360 tests. Adding the case changes the dataset hash, so the decision CLI cannot re-score
+  stored run #8 on this branch (it already refused). Review Approved first time. Next: Step 11.
