@@ -391,6 +391,10 @@ def build_clarification_request(
 FIELD_PROPOSAL_PROMPT_VERSION = "leave-fields-v1"
 
 _DETAIL_TEXT_PLACEHOLDER = re.compile(r"\{detail_text\}")
+# Any case/whitespace variant of a literal closing </detail> tag inside the employee's own text,
+# which would otherwise let it break out of the <detail> wrapper in prompts/leave-fields-v1/
+# user.md and be read as prompt structure rather than untrusted data (final review M-3).
+_DETAIL_CLOSE_TAG = re.compile(r"</\s*detail\s*>", re.IGNORECASE)
 
 
 class FieldProposalOutcomeKind(StrEnum):
@@ -407,8 +411,13 @@ class FieldProposalOutcome:
 
 
 def _render_field_proposal_user_prompt(prompt: PromptTemplate, detail_text: str) -> str:
-    """Substitute only ``{detail_text}``; this template has no ``{documents}``/``{question}``."""
-    return _DETAIL_TEXT_PLACEHOLDER.sub(lambda _match: detail_text, prompt.user)
+    """Substitute only ``{detail_text}``; this template has no ``{documents}``/``{question}``.
+
+    A literal ``</detail>`` inside the employee's own text is neutralised first (M-3), so it can
+    never close the wrapper tag early and be read as prompt structure by the model.
+    """
+    escaped = _DETAIL_CLOSE_TAG.sub("&lt;/detail&gt;", detail_text)
+    return _DETAIL_TEXT_PLACEHOLDER.sub(lambda _match: escaped, prompt.user)
 
 
 def propose_leave_fields(
