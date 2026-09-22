@@ -572,6 +572,27 @@ def test_propose_leave_fields_rejects_injected_command_key_as_schema_violation()
     assert outcome.failure.violation_kind is ViolationKind.SCHEMA
 
 
+def test_propose_leave_fields_requests_the_field_proposal_schema() -> None:
+    # I-1: propose_leave_fields must send AnswerRequest.response_schema so the live provider
+    # requests LeaveFieldProposal's own schema, never the default answer_contract schema (which
+    # parse_field_proposal cannot accept: it always fails as a SCHEMA violation).
+    detail_text = "I need leave from 2026-10-01 to 2026-10-05."
+    provider = ScriptedProvider({detail_text: json.dumps(_field_proposal_payload())})
+    outcome = propose_leave_fields(
+        detail_text,
+        manifest=_manifest(),
+        actor_id="employee-alice",
+        provider=provider,
+        model=MODEL,
+    )
+    assert outcome.kind is FieldProposalOutcomeKind.PROPOSED
+    assert len(provider.requests) == 1
+    assert provider.requests[0].response_schema == (
+        LEAVE_FIELD_PROPOSAL_SCHEMA_NAME,
+        LEAVE_FIELD_PROPOSAL_JSON_SCHEMA,
+    )
+
+
 def test_propose_leave_fields_unknown_actor_raises_unauthorized() -> None:
     provider = ScriptedProvider({})
     with pytest.raises(WorkflowError) as excinfo:
