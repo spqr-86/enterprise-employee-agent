@@ -183,11 +183,17 @@ def test_contract_violation_maps_to_unavailable_and_leaves_state_unchanged(
     assert outcome.failure is not None
     assert outcome.failure.violation_kind is violation_kind
     assert outcome.failure.error_kind is None
-    # The fabricated/forbidden id never becomes a trusted citation or answer: outcome.answer is
-    # None (asserted above), so there is no citations list or answer_text it could appear in. The
-    # diagnostic failure.detail may still name the id (it is an id, not restricted document text)
-    # — that is the raw ContractViolation message, not a re-validated field a caller could act on.
-    if violation_kind is not ViolationKind.CITATION_NOT_RETRIEVED:
+    if violation_kind is ViolationKind.CITATION_NOT_RETRIEVED:
+        # The fabricated id is absent from every employee-facing field: outcome.answer is None
+        # (asserted above), so there is no citations list or answer_text it could appear in, and
+        # it is not woven into the guidance text either.
+        assert outcome.answer is None
+        assert RESTRICTED_FIXTURE_ID not in outcome.guidance
+        # It is pinned to exist ONLY in failure.detail, the raw ContractViolation message. detail
+        # is a diagnostic field, not one rendered to employees (Issue #14 constraint) — this pin
+        # makes that current behaviour visible so a future change to detail breaks this on purpose.
+        assert RESTRICTED_FIXTURE_ID in outcome.failure.detail
+    else:
         assert RESTRICTED_FIXTURE_ID not in _serialise(outcome)
 
     assert_unchanged(repository, request_id, seeded)
