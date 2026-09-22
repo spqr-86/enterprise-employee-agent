@@ -436,3 +436,12 @@
   through `can_view`+`project_for` (closes the Issue #10 `get()` gap), `sqlite3` errors map to
   `WorkflowError`. Design section 1 (pages/flow) presented, awaiting approval; sections 2–3, the
   spec and the plan remain. No code written.
+- 2026-09-22 (session 17): Issue #14 design sections 1–3 approved by the owner (pages/flow;
+  components/contracts; errors/tests). Code reconciliation added: `update_draft`/`cancel_draft`
+  in `DemoApplication` (section 1 had edit/cancel buttons without methods), a new
+  `WorkflowErrorCode.STORAGE_UNAVAILABLE` for `sqlite3.Error` (503), an internal
+  `SQLiteLeaveRepository.list_requests()`, `OfflineDemoProvider` turning the scripted
+  `LookupError` into a `ProviderError`, citations rendered from `data/manifest.json` titles/URLs,
+  and the HR list filtered to non-draft requests in `requests_for`. Spec
+  `docs/superpowers/specs/2026-09-22-issue-14-demo-ui-design.md` and decision 0006 (CSRF) committed
+  as `e265962`; owner review of the spec pending, then writing-plans and Issue #14 → `ready`.
