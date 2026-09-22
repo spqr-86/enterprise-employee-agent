@@ -49,6 +49,7 @@ from enterprise_employee_agent.knowledge.answer import (
 )
 from enterprise_employee_agent.leave.access_policy import resolve_identity
 from enterprise_employee_agent.leave.contracts import (
+    ActorRole,
     CreateDraftInput,
     DemoAccessManifest,
     IdempotencyKey,
@@ -321,6 +322,7 @@ def provide_clarification_from_fields(
 def build_clarification_request(
     answer: GroundedAnswer,
     *,
+    access_map: DocumentAccessMap,
     request_id: Identifier,
     expected_version: int,
     idempotency_key: IdempotencyKey,
@@ -332,6 +334,13 @@ def build_clarification_request(
     lives in ``access_policy``/``COMMAND_SPECS`` and duplicating it here would be a defect, not
     a style choice. ``request_id``, ``expected_version`` and ``idempotency_key`` are
     caller/server-supplied, never derived, same as every other builder in this module.
+
+    ``access_map`` guards a different, narrower thing: the built ``question`` is projected
+    straight to the employee (``EmployeeLeaveProjection.clarification_question``), so ``answer``
+    must never carry a citation the employee cannot read (final review I-2). This is not a role
+    check on the actor issuing the command — that stays ``bind_server_command``'s job — it is a
+    check on what audience the *answer itself* was produced for, since ``GroundedAnswer`` carries
+    no record of that and any caller could otherwise pass in an HR-scoped answer.
     """
     # Task 3's answer_for_actor produces ABSTAINED two different ways (synthesized no-evidence,
     # and the model's own AnswerStatus.ABSTAINED); this single kind check rejects both
@@ -340,6 +349,10 @@ def build_clarification_request(
         raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
 
     if not answer.citations:
+        raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
+
+    employee_readable_ids = {document.id for document in access_map.readable_by(ActorRole.EMPLOYEE)}
+    if not set(answer.citations) <= employee_readable_ids:
         raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
 
     if answer.clarifying_question is None or not answer.clarifying_question.strip():

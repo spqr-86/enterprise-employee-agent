@@ -352,6 +352,7 @@ def test_obedient_model_prose_never_builds_a_command_and_leaves_state_unchanged(
     with pytest.raises(WorkflowError) as excinfo:
         build_clarification_request(
             outcome.answer,
+            access_map=access_map,
             request_id=seeded.request_id,
             expected_version=seeded.version,
             idempotency_key="clarify-obedient-attempt-key",
@@ -371,6 +372,7 @@ def test_obedient_model_prose_never_builds_a_command_and_leaves_state_unchanged(
     with pytest.raises(WorkflowError) as excinfo_empty:
         build_clarification_request(
             citationless,
+            access_map=access_map,
             request_id=seeded.request_id,
             expected_version=seeded.version,
             idempotency_key="clarify-obedient-empty-key",

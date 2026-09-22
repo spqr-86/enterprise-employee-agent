@@ -176,6 +176,7 @@ def test_full_assistant_journey_across_answer_and_field_proposal_paths(
     # clarifying question (not a hand-typed HR message).
     clarification_input = build_clarification_request(
         answer_outcome.answer,
+        access_map=access_map,
         request_id=submitted.request_id,
         expected_version=submitted.version,
         idempotency_key="clarify-alice-assistant-smoke-0001",

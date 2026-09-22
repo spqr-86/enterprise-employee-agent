@@ -353,6 +353,25 @@ def test_forbidden_document_never_reaches_prompt_or_serialised_outcome() -> None
 REQUEST_ID = "leave-alice-clarify-0001"
 EXPECTED_VERSION = 2
 IDEMPOTENCY_KEY = "clarify-alice-build-0001"
+US2 = "people-policies/leave-of-absence/us-supplement.md"
+US2_TEXT = "Supplementary US leave guidance, also public."
+
+
+def _clarification_access_map() -> DocumentAccessMap:
+    """Two employee-readable documents plus one HR-only document (I-2 guard)."""
+    return DocumentAccessMap(
+        access_version="t",
+        corpus_version="t",
+        documents=(
+            KnowledgeDocument(US, US_TEXT, DocumentVisibility.PUBLIC),
+            KnowledgeDocument(US2, US2_TEXT, DocumentVisibility.PUBLIC),
+            KnowledgeDocument(
+                HR_DOC_ID,
+                f"{FORBIDDEN_DOCUMENT_PROBE} {SECRET_MARKER}",
+                DocumentVisibility.HR_ONLY,
+            ),
+        ),
+    )
 
 
 def _answered_grounded_answer(
@@ -370,9 +389,12 @@ def _answered_grounded_answer(
     )
 
 
-def _build(answer: GroundedAnswer) -> RequestClarificationInput:
+def _build(
+    answer: GroundedAnswer, *, access_map: DocumentAccessMap | None = None
+) -> RequestClarificationInput:
     return build_clarification_request(
         answer,
+        access_map=access_map if access_map is not None else _clarification_access_map(),
         request_id=REQUEST_ID,
         expected_version=EXPECTED_VERSION,
         idempotency_key=IDEMPOTENCY_KEY,
@@ -381,16 +403,30 @@ def _build(answer: GroundedAnswer) -> RequestClarificationInput:
 
 def test_build_clarification_request_appends_a_code_built_source_suffix() -> None:
     answer = _answered_grounded_answer(
-        citations=(US, HR_DOC_ID), clarifying_question="Continuous or intermittent?"
+        citations=(US, US2), clarifying_question="Continuous or intermittent?"
     )
     command_input = _build(answer)
     assert command_input.request_id == REQUEST_ID
     assert command_input.expected_version == EXPECTED_VERSION
     assert command_input.idempotency_key == IDEMPOTENCY_KEY
     assert command_input.question.startswith("Continuous or intermittent?")
-    assert command_input.question.endswith(f" (source: {US}, {HR_DOC_ID})")
+    assert command_input.question.endswith(f" (source: {US}, {US2})")
     # The suffix is built only from citation ids: the model's own text never contributes it.
     assert US_TEXT not in command_input.question
+
+
+def test_build_clarification_request_rejects_a_citation_the_employee_cannot_read() -> None:
+    # I-2: GroundedAnswer carries no record of which actor it was produced for, so a caller
+    # could pass in an HR-scoped answer. build_clarification_request must independently check
+    # every citation against access_map.readable_by(EMPLOYEE) before building the (employee-
+    # visible) clarification question, never trusting the caller's audience.
+    answer = _answered_grounded_answer(citations=(US, HR_DOC_ID))
+    with pytest.raises(WorkflowError) as excinfo:
+        _build(answer)
+    assert excinfo.value.code is WorkflowErrorCode.VALIDATION_FAILED
+    # No state change and no forbidden id/text anywhere in what the error carries.
+    assert HR_DOC_ID not in str(excinfo.value)
+    assert SECRET_MARKER not in str(excinfo.value)
 
 
 def test_build_clarification_request_rejects_empty_citations() -> None:
@@ -429,11 +465,11 @@ def test_build_clarification_request_rejects_unavailable_and_abstained_kinds(
 
 def test_build_clarification_request_truncates_an_oversized_question_but_keeps_the_suffix() -> None:
     long_question = "Please clarify: " + ("word " * 200)  # ~900+ chars
-    answer = _answered_grounded_answer(citations=(US, HR_DOC_ID), clarifying_question=long_question)
+    answer = _answered_grounded_answer(citations=(US, US2), clarifying_question=long_question)
     command_input = _build(answer)
     assert len(command_input.question) <= 500
     # The citation suffix is never silently dropped, even when the question text is truncated.
-    assert command_input.question.endswith(f" (source: {US}, {HR_DOC_ID})")
+    assert command_input.question.endswith(f" (source: {US}, {US2})")
 
 
 # ---------------------------------------------------------------------------

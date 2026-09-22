@@ -280,6 +280,7 @@ def test_employee_cannot_execute_a_built_clarification_request(manifest, reposit
     )
     command_input = build_clarification_request(
         answer,
+        access_map=access_map,
         request_id=submitted.request_id,
         expected_version=submitted.version,
         idempotency_key="clarify-alice-integration-0001",
