@@ -79,9 +79,9 @@ class _EvalCaseBase(ContractModel):
 class KnowledgeEvalCase(_EvalCaseBase):
     expected_evidence: tuple[str, ...] = ()
     abstain_expected: bool = False
-    # v0.1 metadata only: declared and settable on a case, but not read by
-    # validator/scorer/reporting/run — clarification-seeking behavior is unmeasured
-    # until there is a real agent to test (Issue #8). Mirrors held_out: defined, not applied.
+    # Scored by score_knowledge_case (Issue #13 Step 9): when true, the case also requires a
+    # clarifying question in the answer, and clarification_ok/passed reflect it. Not gated in
+    # the Issue #8 decision rule — decision.py reports it as a separate "clarification" tally.
     expects_clarification: bool = False
 
     @model_validator(mode="after")

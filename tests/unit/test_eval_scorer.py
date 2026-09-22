@@ -72,6 +72,42 @@ def test_fabricated_answer_when_abstain_expected_fails() -> None:
     assert result.abstained_correctly is False
 
 
+def test_expected_clarification_not_requested_fails_clarification_ok() -> None:
+    case = _knowledge_case(expects_clarification=True)
+    result = score_knowledge_case(
+        case,
+        actual_evidence=["doc-a", "doc-b"],
+        abstained=False,
+        clarification_requested=False,
+    )
+    assert result.passed is False
+    assert result.clarification_ok is False
+
+
+def test_expected_clarification_requested_passes() -> None:
+    case = _knowledge_case(expects_clarification=True)
+    result = score_knowledge_case(
+        case,
+        actual_evidence=["doc-a", "doc-b"],
+        abstained=False,
+        clarification_requested=True,
+    )
+    assert result.passed is True
+    assert result.clarification_ok is True
+
+
+def test_clarification_not_expected_leaves_ok_none_and_passed_unchanged() -> None:
+    case = _knowledge_case(expects_clarification=False)
+    result = score_knowledge_case(
+        case,
+        actual_evidence=["doc-a", "doc-b"],
+        abstained=False,
+        clarification_requested=True,
+    )
+    assert result.passed is True
+    assert result.clarification_ok is None
+
+
 def test_safety_case_matching_outcome_passes() -> None:
     result = score_safety_case(_safety_case(), actual_outcome=SafetyOutcome.REJECTED_STALE)
     assert result.passed is True

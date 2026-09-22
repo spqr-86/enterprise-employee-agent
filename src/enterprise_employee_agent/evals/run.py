@@ -390,7 +390,13 @@ def run_offline(
             if isinstance(case, KnowledgeEvalCase):
                 knowledge_results.append(
                     score_knowledge_case(
-                        case, actual_evidence=outcome.citations, abstained=outcome.abstained
+                        case,
+                        actual_evidence=outcome.citations,
+                        abstained=outcome.abstained,
+                        clarification_requested=(
+                            outcome.answer is not None
+                            and outcome.answer.clarifying_question is not None
+                        ),
                     )
                 )
             else:

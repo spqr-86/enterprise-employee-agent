@@ -87,8 +87,10 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   59/59 tests pass, ruff clean. Known limitations parked as backlog (not blocking): one-sided
   safety checks lack negative controls, a category-name typo produces misleading validation
   errors, `_REPO_ROOT` path resolution assumes an editable install, `abstain_expected` with
-  non-empty `expected_evidence` is silently accepted, no `make eval` target/README pointer, and
-  the `expects_clarification` field is metadata-only (not yet scored).
+  non-empty `expected_evidence` is silently accepted, no `make eval` target/README pointer.
+  `expects_clarification` is scored (Issue #13 Step 9): `score_knowledge_case` gains
+  `clarification_ok`, and `decision.py` reports a separate `clarification` tally — not gated by
+  the Issue #8 decision rule.
 - Issue #8 baseline pipeline (lexical k=1 retrieval, OpenRouter answer contract, budgeted live
   runner, review and decision CLIs) is built on `feat/8-retrieval-answer-baseline`. Live run
   `20260914T145319Z`: complete, 18 calls, $0.024; verdict **INVESTIGATE** — groundedness 6/7,
