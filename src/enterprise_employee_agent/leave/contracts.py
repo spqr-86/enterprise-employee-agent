@@ -282,7 +282,7 @@ class _CommandContext:
         if _token is not _BINDING_TOKEN:
             raise TypeError("command contexts must be created by bind_server_command")
         if self.actor.role not in COMMAND_SPECS[self.input.command].allowed_roles:
-            raise ValueError("actor role is not allowed for command")
+            raise WorkflowError(WorkflowErrorCode.FORBIDDEN)
         input_request_id = getattr(self.input, "request_id", None)
         if input_request_id is not None and input_request_id != self.request_id:
             raise ValueError("server request_id does not match command target")
@@ -672,7 +672,7 @@ def bind_server_command(
         None,
     )
     if identity is None:
-        raise ValueError("server-selected actor is not declared")
+        raise WorkflowError(WorkflowErrorCode.UNAUTHORIZED)
     if isinstance(input, CreateDraftInput):
         if generated_request_id is None:
             raise ValueError("create_draft requires a server-generated request_id")

@@ -240,13 +240,14 @@ def test_command_and_audit_envelopes_validate_boundary_fields() -> None:
     )
     assert command.actor.identity_id == "employee-alice"
     assert command.request_id == "leave-alice-001"
-    with pytest.raises(ValueError, match="server-selected actor"):
+    with pytest.raises(WorkflowError) as excinfo:
         bind_server_command(
             manifest,
             "attacker-selected",
             client_input,
             generated_request_id="leave-attacker-001",
         )
+    assert excinfo.value.code is WorkflowErrorCode.UNAUTHORIZED
     fingerprint = command_fingerprint(command)
     event = build_audit_event(
         command,
@@ -352,7 +353,7 @@ def test_command_and_audit_envelopes_validate_boundary_fields() -> None:
         ),
     )
     assert command_fingerprint(existing_a) != command_fingerprint(existing_b)
-    with pytest.raises(ValueError, match="actor role"):
+    with pytest.raises(WorkflowError) as excinfo:
         bind_server_command(
             manifest,
             "employee-alice",
@@ -362,6 +363,7 @@ def test_command_and_audit_envelopes_validate_boundary_fields() -> None:
                 idempotency_key="process-alice-001",
             ),
         )
+    assert excinfo.value.code is WorkflowErrorCode.FORBIDDEN
 
     with pytest.raises(ValidationError):
         StartProcessingInput(
