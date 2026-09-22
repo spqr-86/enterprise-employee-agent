@@ -341,5 +341,15 @@
   script remains incompatible with the plan's `### Step N` headers, so each step's brief is
   still assembled by hand from the plan file — third step running on this workaround without
   issue. Branch stays unpushed to `origin` until all 12 steps and the final whole-branch review
-  land (single PR for the whole plan). Next: Step 4 (`create_draft_from_fields`/
-  `provide_clarification_from_fields`, AC-1 write path).
+  land (single PR for the whole plan). Step 4 (`create_draft_from_fields`/
+  `provide_clarification_from_fields`, AC-1 write path, commit `a70f774`) landed after one fix
+  round: initial review approved the production code (server-supplied invariant honored — no
+  internal `uuid4()`/`datetime.now()`, no branching on payload/question/model output — D-C/D-D
+  honored, existing interfaces used correctly) but flagged one Important plan-mandated gap: the
+  new integration test read stored state for its digest comparison via `repository.get(...)`
+  directly instead of via `access_policy.project_for`, contradicting the brief's explicit
+  interface note. Fix (commit `7567e58`) rebuilt the payload from an `EmployeeLeaveProjection`
+  instead; re-review confirmed addressed, no new breakage. 309/309 tests. Next: Step 5
+  (evidence-bound HR clarification bridge, evidence propagation) — must also check Step 3's
+  design note (`UNAVAILABLE`→`answer=None` vs `NO_EVIDENCE`→synthesized `ABSTAINED`
+  `GroundedAnswer`) against `build_clarification_request`'s handling of both sources.
