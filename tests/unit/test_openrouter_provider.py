@@ -7,7 +7,11 @@ from pathlib import Path
 import httpx
 import pytest
 
-from enterprise_employee_agent.llm.contract import ANSWER_JSON_SCHEMA
+from enterprise_employee_agent.leave.field_proposal import (
+    LEAVE_FIELD_PROPOSAL_JSON_SCHEMA,
+    LEAVE_FIELD_PROPOSAL_SCHEMA_NAME,
+)
+from enterprise_employee_agent.llm.contract import ANSWER_JSON_SCHEMA, ANSWER_SCHEMA_NAME
 from enterprise_employee_agent.llm.openrouter import (
     OpenRouterProvider,
     fetch_model_listing,
@@ -76,6 +80,32 @@ def test_request_shape_sent_to_openrouter() -> None:
     assert body["response_format"]["type"] == "json_schema"
     assert body["response_format"]["json_schema"]["strict"] is True
     assert body["response_format"]["json_schema"]["schema"] == ANSWER_JSON_SCHEMA
+
+
+def test_build_payload_defaults_to_the_answer_schema_when_none_is_given() -> None:
+    # I-1 regression guard: AnswerRequest.response_schema=None (the field's default, and what
+    # every answer_question() call still passes) must keep sending answer_contract, byte-
+    # identical to the pre-fix payload — no network call needed to assert this.
+    payload = OpenRouterProvider(SECRET, client=httpx.Client()).build_payload(_request())
+    assert payload["response_format"]["json_schema"]["name"] == ANSWER_SCHEMA_NAME
+    assert payload["response_format"]["json_schema"]["schema"] == ANSWER_JSON_SCHEMA
+
+
+def test_build_payload_uses_the_requests_own_response_schema_when_given() -> None:
+    # I-1: propose_leave_fields sets response_schema to the leave-field-proposal schema; the
+    # provider must send exactly that schema/name, not the answer contract.
+    request = AnswerRequest(
+        model=MODEL,
+        system_prompt="system text",
+        user_prompt="user text",
+        question="free text",
+        retrieved_ids=(),
+        response_schema=(LEAVE_FIELD_PROPOSAL_SCHEMA_NAME, LEAVE_FIELD_PROPOSAL_JSON_SCHEMA),
+    )
+    payload = OpenRouterProvider(SECRET, client=httpx.Client()).build_payload(request)
+    assert payload["response_format"]["json_schema"]["name"] == LEAVE_FIELD_PROPOSAL_SCHEMA_NAME
+    assert payload["response_format"]["json_schema"]["schema"] == LEAVE_FIELD_PROPOSAL_JSON_SCHEMA
+    assert payload["response_format"]["json_schema"]["schema"] != ANSWER_JSON_SCHEMA
 
 
 def test_extra_params_cannot_override_fixed_fields() -> None:
