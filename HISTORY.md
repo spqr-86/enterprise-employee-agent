@@ -445,3 +445,9 @@
   and the HR list filtered to non-draft requests in `requests_for`. Spec
   `docs/superpowers/specs/2026-09-22-issue-14-demo-ui-design.md` and decision 0006 (CSRF) committed
   as `e265962`; owner review of the spec pending, then writing-plans and Issue #14 → `ready`.
+- 2026-09-23 (session 18): Owner approved the Issue #14 spec; `e265962` and `373f79b` pushed to
+  `main`. Implementation plan `docs/superpowers/plans/2026-09-22-issue-14-demo-ui.md` written
+  (7 TDD tasks; a "Deviations from the spec" section: uvicorn factory instead of a module-level
+  app, `preview()` folded into `request_for()`, HR list also hides cancelled, web tests on the
+  real `DemoApplication`, SQLite connections closed per call). Committed locally as `d5ecb6c`,
+  sent to the owner for review. Next: owner OK → push → Issue #14 `ready` → execution.
