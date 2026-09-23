@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
@@ -21,15 +22,23 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from enterprise_employee_agent.app import DemoApplication, DemoSettings, build_demo_application
+from enterprise_employee_agent.app import (
+    DemoApplication,
+    DemoSettings,
+    LeaveForm,
+    build_demo_application,
+)
 from enterprise_employee_agent.leave.contracts import (
     ERROR_MESSAGES,
+    CommandName,
     WorkflowError,
     WorkflowErrorCode,
 )
 from enterprise_employee_agent.web import views
 from enterprise_employee_agent.web.errors import (
+    CONFLICT_CODES,
     FOREIGN_ORIGIN_MESSAGE,
+    FORM_CODES,
     GENERIC_ERROR_MESSAGE,
     error_title,
     http_status_for,
@@ -141,6 +150,284 @@ def create_app(demo: DemoApplication) -> FastAPI:
             question=question,
             answer=views.answer_view(result),
             suggestions=demo.suggested_questions(),
+        )
+
+    def leave_form(
+        start_date: str, end_date: str, request_type: str, employee_comment: str
+    ) -> LeaveForm:
+        return LeaveForm(
+            start_date=start_date,
+            end_date=end_date,
+            request_type=request_type,
+            employee_comment=employee_comment,
+        )
+
+    def render_form(
+        request: Request,
+        *,
+        heading: str,
+        action_url: str,
+        form: LeaveForm,
+        submit_label: str,
+        expected_version: int | None = None,
+        note: str | None = None,
+        error: str | None = None,
+        status_code: int = 200,
+    ) -> Response:
+        return render(
+            request,
+            "request_form.html",
+            status_code=status_code,
+            heading=heading,
+            action_url=action_url,
+            form=form,
+            idempotency_key=new_key(),
+            expected_version=expected_version,
+            note=note,
+            error=error,
+            submit_label=submit_label,
+        )
+
+    def render_detail(
+        request: Request,
+        actor_id: str,
+        request_id: str,
+        *,
+        status_code: int = 200,
+        notice: str | None = None,
+        error: str | None = None,
+        form: LeaveForm | None = None,
+    ) -> Response:
+        detail = views.detail_view(demo.request_for(actor_id, request_id))
+        return render(
+            request,
+            "request.html",
+            status_code=status_code,
+            detail=detail,
+            keys={action: new_key() for action in detail.actions},
+            notice=notice,
+            error=error,
+            form=form or detail.form,
+        )
+
+    def mutate(
+        request: Request,
+        actor_id: str,
+        request_id: str,
+        action: Callable[[], object],
+        *,
+        on_form_error: Callable[[str], Response] | None = None,
+    ) -> Response:
+        try:
+            action()
+        except WorkflowError as error:
+            if error.code in CONFLICT_CODES:
+                return render_detail(
+                    request,
+                    actor_id,
+                    request_id,
+                    status_code=409,
+                    notice=ERROR_MESSAGES[error.code],
+                )
+            if error.code in FORM_CODES and on_form_error is not None:
+                return on_form_error(ERROR_MESSAGES[error.code])
+            raise
+        return RedirectResponse(f"/requests/{request_id}", status_code=303)
+
+    @app.get("/requests")
+    def request_list(request: Request) -> Response:
+        actor_id = read_identity(request)
+        role = demo.identity(actor_id).role
+        rows = tuple(views.row_view(p) for p in demo.requests_for(actor_id))
+        return render(request, "requests.html", heading=views.list_heading(role), rows=rows)
+
+    @app.get("/requests/new")
+    def new_request(request: Request) -> Response:
+        demo.identity(read_identity(request))
+        return render(request, "request_new.html", suggestions=demo.suggested_leave_descriptions())
+
+    @app.post("/requests/propose", dependencies=SAME_ORIGIN)
+    def propose(request: Request, description: Annotated[str, Form()] = "") -> Response:
+        outcome = demo.propose_fields(read_identity(request), description)
+        form, note = views.form_from_proposal(outcome)
+        return render_form(
+            request,
+            heading="Check the pre-filled request",
+            action_url="/requests",
+            form=form,
+            note=note,
+            submit_label="Save draft",
+        )
+
+    @app.post("/requests", dependencies=SAME_ORIGIN)
+    def create(
+        request: Request,
+        start_date: Annotated[str, Form()] = "",
+        end_date: Annotated[str, Form()] = "",
+        request_type: Annotated[str, Form()] = "",
+        employee_comment: Annotated[str, Form()] = "",
+        idempotency_key: Annotated[str, Form()] = "",
+    ) -> Response:
+        actor_id = read_identity(request)
+        form = leave_form(start_date, end_date, request_type, employee_comment)
+        try:
+            preview = demo.create_draft(actor_id, form, idempotency_key)
+        except WorkflowError as error:
+            if error.code not in FORM_CODES:
+                raise
+            return render_form(
+                request,
+                heading="Check the pre-filled request",
+                action_url="/requests",
+                form=form,
+                error=ERROR_MESSAGES[error.code],
+                submit_label="Save draft",
+                status_code=422,
+            )
+        return RedirectResponse(f"/requests/{preview.request_id}", status_code=303)
+
+    @app.get("/requests/{request_id}")
+    def request_detail(request: Request, request_id: str) -> Response:
+        return render_detail(request, read_identity(request), request_id)
+
+    @app.get("/requests/{request_id}/edit")
+    def edit_page(request: Request, request_id: str) -> Response:
+        view = demo.request_for(read_identity(request), request_id)
+        if CommandName.UPDATE_DRAFT not in view.actions:
+            raise WorkflowError(WorkflowErrorCode.INVALID_TRANSITION)
+        return render_form(
+            request,
+            heading="Edit draft",
+            action_url=f"/requests/{request_id}/edit",
+            form=views.form_from_projection(view.projection),
+            expected_version=view.projection.version,
+            submit_label="Save changes",
+        )
+
+    @app.post("/requests/{request_id}/edit", dependencies=SAME_ORIGIN)
+    def edit(
+        request: Request,
+        request_id: str,
+        expected_version: Annotated[int, Form()],
+        start_date: Annotated[str, Form()] = "",
+        end_date: Annotated[str, Form()] = "",
+        request_type: Annotated[str, Form()] = "",
+        employee_comment: Annotated[str, Form()] = "",
+        idempotency_key: Annotated[str, Form()] = "",
+    ) -> Response:
+        actor_id = read_identity(request)
+        form = leave_form(start_date, end_date, request_type, employee_comment)
+        return mutate(
+            request,
+            actor_id,
+            request_id,
+            lambda: demo.update_draft(
+                actor_id, request_id, expected_version, form, idempotency_key
+            ),
+            on_form_error=lambda message: render_form(
+                request,
+                heading="Edit draft",
+                action_url=f"/requests/{request_id}/edit",
+                form=form,
+                expected_version=expected_version,
+                error=message,
+                submit_label="Save changes",
+                status_code=422,
+            ),
+        )
+
+    @app.post("/requests/{request_id}/cancel", dependencies=SAME_ORIGIN)
+    def cancel(
+        request: Request,
+        request_id: str,
+        expected_version: Annotated[int, Form()],
+        idempotency_key: Annotated[str, Form()] = "",
+    ) -> Response:
+        actor_id = read_identity(request)
+        return mutate(
+            request,
+            actor_id,
+            request_id,
+            lambda: demo.cancel_draft(actor_id, request_id, expected_version, idempotency_key),
+        )
+
+    @app.post("/requests/{request_id}/confirm", dependencies=SAME_ORIGIN)
+    def confirm(
+        request: Request,
+        request_id: str,
+        expected_version: Annotated[int, Form()],
+        payload_digest: Annotated[str, Form()] = "",
+        idempotency_key: Annotated[str, Form()] = "",
+    ) -> Response:
+        actor_id = read_identity(request)
+        return mutate(
+            request,
+            actor_id,
+            request_id,
+            lambda: demo.confirm(
+                actor_id, request_id, expected_version, payload_digest, idempotency_key
+            ),
+        )
+
+    @app.post("/requests/{request_id}/start-processing", dependencies=SAME_ORIGIN)
+    def start_processing(
+        request: Request,
+        request_id: str,
+        expected_version: Annotated[int, Form()],
+        idempotency_key: Annotated[str, Form()] = "",
+    ) -> Response:
+        actor_id = read_identity(request)
+        return mutate(
+            request,
+            actor_id,
+            request_id,
+            lambda: demo.hr_start(actor_id, request_id, expected_version, idempotency_key),
+        )
+
+    @app.post("/requests/{request_id}/clarification-request", dependencies=SAME_ORIGIN)
+    def request_clarification(
+        request: Request,
+        request_id: str,
+        expected_version: Annotated[int, Form()],
+        question: Annotated[str, Form()] = "",
+        idempotency_key: Annotated[str, Form()] = "",
+    ) -> Response:
+        actor_id = read_identity(request)
+        return mutate(
+            request,
+            actor_id,
+            request_id,
+            lambda: demo.hr_clarify(
+                actor_id, request_id, expected_version, question, idempotency_key
+            ),
+            on_form_error=lambda message: render_detail(
+                request, actor_id, request_id, status_code=422, error=message
+            ),
+        )
+
+    @app.post("/requests/{request_id}/clarification-response", dependencies=SAME_ORIGIN)
+    def provide_clarification(
+        request: Request,
+        request_id: str,
+        expected_version: Annotated[int, Form()],
+        start_date: Annotated[str, Form()] = "",
+        end_date: Annotated[str, Form()] = "",
+        request_type: Annotated[str, Form()] = "",
+        employee_comment: Annotated[str, Form()] = "",
+        idempotency_key: Annotated[str, Form()] = "",
+    ) -> Response:
+        actor_id = read_identity(request)
+        form = leave_form(start_date, end_date, request_type, employee_comment)
+        return mutate(
+            request,
+            actor_id,
+            request_id,
+            lambda: demo.employee_clarify(
+                actor_id, request_id, expected_version, form, idempotency_key
+            ),
+            on_form_error=lambda message: render_detail(
+                request, actor_id, request_id, status_code=422, error=message, form=form
+            ),
         )
 
     return app

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Requests · Leave assistant demo{% endblock %}
+{% block content %}
+<h1>{{ heading }}</h1>
+{% if rows %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Request</th><th scope="col">Employee</th><th scope="col">Status</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Type</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr><td><a href="/requests/{{ row.request_id }}">{{ row.request_id }}</a></td><td>{{ row.employee_id }}</td><td>{{ row.status }}</td><td>{{ row.start_date }}</td><td>{{ row.end_date }}</td><td>{{ row.request_type }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p>No requests to show.</p>
+{% endif %}
+{% endblock %}

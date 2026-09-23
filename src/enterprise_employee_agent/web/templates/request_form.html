@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }} · Leave assistant demo{% endblock %}
+{% block content %}
+<h1>{{ heading }}</h1>
+{% if note %}<p class="note" role="status">{{ note }}</p>{% endif %}
+{% if error %}<p id="form-error" class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="{{ action_url }}">
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {% if expected_version %}<input type="hidden" name="expected_version" value="{{ expected_version }}">{% endif %}
+  {% include "_leave_fields.html" %}
+  <button type="submit">{{ submit_label }}</button>
+</form>
+<p class="fine">Saving creates or updates a draft only. Nothing is submitted until you confirm the preview.</p>
+{% endblock %}
