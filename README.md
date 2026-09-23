@@ -18,6 +18,19 @@ make test
 make eval-smoke
 ```
 
+## Demo UI
+
+`make demo` starts a minimal server-rendered demo (FastAPI + Jinja2) at
+`http://127.0.0.1:8000`: switch between a synthetic employee/manager/HR identity and walk the
+leave-request flow (ask, propose, draft, confirm, HR actions). The identity switcher is a demo
+convenience only — it is not authentication, and the cookie it sets is unsigned by design.
+
+By default the demo runs **offline**, answering from a fixed scripted fixture with no network
+call. Setting `OPENROUTER_API_KEY` switches it to **live** mode against OpenRouter; live mode has
+no budget guard, so only enable it locally and deliberately.
+
+`DEMO_DATABASE_PATH` sets the SQLite file used for demo requests (default `var/demo.sqlite`).
+
 ## Документы
 
 - [PLAN.md](PLAN.md) — живой план и принятые границы.
