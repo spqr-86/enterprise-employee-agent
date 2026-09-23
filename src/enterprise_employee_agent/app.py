@@ -35,9 +35,14 @@ from enterprise_employee_agent.leave.access_policy import (
     can_view,
     project_for,
     resolve_identity,
+    visible_requests,
 )
 from enterprise_employee_agent.leave.assistant import (
+    AssistantOutcome,
+    FieldProposalOutcome,
+    answer_for_actor,
     create_draft_from_fields,
+    propose_leave_fields,
     provide_clarification_from_fields,
 )
 from enterprise_employee_agent.leave.contracts import (
@@ -54,6 +59,7 @@ from enterprise_employee_agent.leave.contracts import (
     LeaveRequest,
     LeaveRequestPayload,
     LeaveRequestPreview,
+    LeaveStatus,
     RequestClarificationInput,
     StartProcessingInput,
     UpdateDraftInput,
@@ -161,6 +167,16 @@ class RequestView:
     projection: LeaveProjection
     preview: LeaveRequestPreview | None
     actions: frozenset[CommandName]
+
+
+@dataclass(frozen=True, slots=True)
+class AskResult:
+    outcome: AssistantOutcome
+    citations: tuple[CitationInfo, ...]
+
+
+# Statuses HR never lists: the request has not left the employee's hands (spec, HR page).
+_HR_HIDDEN_STATUSES = frozenset({LeaveStatus.DRAFT, LeaveStatus.CANCELLED})
 
 
 def _available_actions(actor: DemoIdentity, request: LeaveRequest) -> frozenset[CommandName]:
@@ -464,6 +480,41 @@ class DemoApplication:
             preview=preview,
             actions=actions,
         )
+
+    def ask(self, actor_id: str, question: str) -> AskResult:
+        self._actor(actor_id)
+        outcome = answer_for_actor(
+            question,
+            manifest=self._manifest,
+            actor_id=actor_id,
+            access_map=self._access_map,
+            provider=self._provider,
+            model=self._model,
+        )
+        cited = outcome.answer.citations if outcome.answer is not None else ()
+        return AskResult(
+            outcome=outcome,
+            citations=tuple(self._citations[doc] for doc in cited if doc in self._citations),
+        )
+
+    def propose_fields(self, actor_id: str, text: str) -> FieldProposalOutcome:
+        self._actor(actor_id)
+        return propose_leave_fields(
+            text,
+            manifest=self._manifest,
+            actor_id=actor_id,
+            provider=self._provider,
+            model=self._model,
+        )
+
+    def requests_for(self, actor_id: str) -> tuple[LeaveProjection, ...]:
+        actor = self._actor(actor_id)
+        with self._domain_errors():
+            stored = self._repository.list_requests()
+        visible = visible_requests(self._manifest, actor, stored)
+        if actor.role is ActorRole.HR:
+            visible = tuple(r for r in visible if r.status not in _HR_HIDDEN_STATUSES)
+        return tuple(project_for(self._manifest, actor, request) for request in visible)
 
 
 def build_demo_application(
