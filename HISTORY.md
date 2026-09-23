@@ -451,3 +451,9 @@
   app, `preview()` folded into `request_for()`, HR list also hides cancelled, web tests on the
   real `DemoApplication`, SQLite connections closed per call). Committed locally as `d5ecb6c`,
   sent to the owner for review. Next: owner OK → push → Issue #14 `ready` → execution.
+- 2026-09-23 (session 19): Issue #14 execution via subagent-driven development on
+  `feat/14-demo-ui`. Tasks 1–4 of 7 done, each passed a task review: `e15fdc2` storage safety
+  (`STORAGE_UNAVAILABLE`, `list_requests`, one closed connection per call), `457be5e` composition
+  root and offline mode, `6cd331e` `DemoApplication` workflow commands and `request_for`,
+  `497cf62` `ask`/`propose_fields`/`requests_for`. 409 tests green. Next: Task 5 (web
+  foundation, CSRF).
