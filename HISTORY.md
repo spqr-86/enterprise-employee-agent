@@ -457,3 +457,8 @@
   root and offline mode, `6cd331e` `DemoApplication` workflow commands and `request_for`,
   `497cf62` `ask`/`propose_fields`/`requests_for`. 409 tests green. Next: Task 5 (web
   foundation, CSRF).
+- 2026-09-23 (session 20): Issue #14 Tasks 5–6 done on `feat/14-demo-ui`, each passed a task
+  review: `88e2d56` web foundation (FastAPI, identity cookie, same-origin CSRF check, error
+  mapping, ask page; 434 tests), `c6a70bd` leave request pages (draft, preview, confirmation, HR
+  actions, clarification) + `fa75a10` fix round 1 (typed `detail_view`). 449 tests green. Next:
+  Task 7 (e2e/smoke, brief extracted), final whole-branch review, PR after owner OK.
