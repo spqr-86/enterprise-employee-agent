@@ -2,9 +2,10 @@
 {% block title %}Ask · Leave assistant demo{% endblock %}
 {% block content %}
 <h1>Ask about leave policy</h1>
+{% if error %}<p id="form-error" class="error" role="alert">{{ error }}</p>{% endif %}
 <form method="post" action="/ask">
   <label for="question">Your question</label>
-  <textarea id="question" name="question" rows="3" maxlength="1000" required>{{ question }}</textarea>
+  <textarea id="question" name="question" rows="3" maxlength="1000" required{% if error %} aria-describedby="form-error"{% endif %}>{{ question }}</textarea>
   <button type="submit">Ask</button>
 </form>
 {% if suggestions %}

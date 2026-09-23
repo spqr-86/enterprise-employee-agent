@@ -21,6 +21,7 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from enterprise_employee_agent.app import (
     DemoApplication,
@@ -55,6 +56,12 @@ from enterprise_employee_agent.web.session import (
 _WEB_DIR = Path(__file__).parent
 _LOG = logging.getLogger(__name__)
 SAME_ORIGIN = [Depends(require_same_origin)]
+# The Origin/Referer check in require_same_origin trusts request.base_url, which FastAPI builds
+# from the client-supplied Host header; without this, a DNS-rebinding page could send a Host and
+# Origin it controls and pass same-origin (I1, final review). TrustedHostMiddleware runs first and
+# rejects any other Host with 400, before require_same_origin ever sees the request. "testserver"
+# is Starlette's TestClient default Host and is kept per controller ruling.
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
 
 
 def new_key() -> str:
@@ -67,6 +74,7 @@ def create_app(demo: DemoApplication) -> FastAPI:
     app = FastAPI(
         title="Enterprise Employee Agent demo", docs_url=None, redoc_url=None, openapi_url=None
     )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS, www_redirect=False)
     templates = Jinja2Templates(directory=_WEB_DIR / "templates")
     app.mount("/static", StaticFiles(directory=_WEB_DIR / "static"), name="static")
 
@@ -143,13 +151,28 @@ def create_app(demo: DemoApplication) -> FastAPI:
 
     @app.post("/ask", dependencies=SAME_ORIGIN)
     def ask(request: Request, question: Annotated[str, Form()] = "") -> Response:
-        result = demo.ask(read_identity(request), question)
+        actor_id = read_identity(request)
+        try:
+            result = demo.ask(actor_id, question)
+        except WorkflowError as error:
+            if error.code not in FORM_CODES:
+                raise
+            return render(
+                request,
+                "ask.html",
+                status_code=422,
+                question=question,
+                answer=None,
+                suggestions=demo.suggested_questions(),
+                error=ERROR_MESSAGES[error.code],
+            )
         return render(
             request,
             "ask.html",
             question=question,
             answer=views.answer_view(result),
             suggestions=demo.suggested_questions(),
+            error=None,
         )
 
     def leave_form(
@@ -197,6 +220,7 @@ def create_app(demo: DemoApplication) -> FastAPI:
         notice: str | None = None,
         error: str | None = None,
         form: LeaveForm | None = None,
+        clarification_question: str | None = None,
     ) -> Response:
         detail = views.detail_view(demo.request_for(actor_id, request_id))
         return render(
@@ -208,6 +232,7 @@ def create_app(demo: DemoApplication) -> FastAPI:
             notice=notice,
             error=error,
             form=form or detail.form,
+            clarification_question=clarification_question,
         )
 
     def mutate(
@@ -248,7 +273,20 @@ def create_app(demo: DemoApplication) -> FastAPI:
 
     @app.post("/requests/propose", dependencies=SAME_ORIGIN)
     def propose(request: Request, description: Annotated[str, Form()] = "") -> Response:
-        outcome = demo.propose_fields(read_identity(request), description)
+        actor_id = read_identity(request)
+        try:
+            outcome = demo.propose_fields(actor_id, description)
+        except WorkflowError as error:
+            if error.code not in FORM_CODES:
+                raise
+            return render(
+                request,
+                "request_new.html",
+                status_code=422,
+                description=description,
+                suggestions=demo.suggested_leave_descriptions(),
+                error=ERROR_MESSAGES[error.code],
+            )
         form, note = views.form_from_proposal(outcome)
         return render_form(
             request,
@@ -401,7 +439,12 @@ def create_app(demo: DemoApplication) -> FastAPI:
                 actor_id, request_id, expected_version, question, idempotency_key
             ),
             on_form_error=lambda message: render_detail(
-                request, actor_id, request_id, status_code=422, error=message
+                request,
+                actor_id,
+                request_id,
+                status_code=422,
+                error=message,
+                clarification_question=question,
             ),
         )
 

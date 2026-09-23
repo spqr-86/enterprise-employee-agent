@@ -16,7 +16,14 @@ from enterprise_employee_agent.app import (
     build_demo_application,
 )
 from enterprise_employee_agent.leave.contracts import LeaveStatus
+from enterprise_employee_agent.llm.provider import AnswerRequest, ProviderResponse
 from enterprise_employee_agent.web.server import create_app
+
+
+class _AssertNotCalledProvider:
+    def complete(self, request: AnswerRequest) -> ProviderResponse:
+        raise AssertionError("provider must not be called")
+
 
 NOW = datetime(2026, 9, 21, 10, 0, tzinfo=UTC)
 ORIGIN = {"origin": "http://testserver"}
@@ -30,12 +37,13 @@ FIELDS = {
 FORM = LeaveForm(**FIELDS)
 
 
-def _setup(tmp_path: Path) -> tuple[TestClient, DemoApplication]:
+def _setup(tmp_path: Path, *, provider=None) -> tuple[TestClient, DemoApplication]:
     counter = itertools.count(1)
     demo = build_demo_application(
         DemoSettings(database_path=tmp_path / "demo.sqlite", openrouter_api_key=None),
         clock=lambda: NOW,
         id_factory=lambda prefix: f"{prefix}-{next(counter):04d}",
+        provider=provider,
     )
     return TestClient(create_app(demo)), demo
 
@@ -225,6 +233,45 @@ def test_hr_blank_clarification_question_is_422_on_the_request_page(tmp_path) ->
     page = _post(client, f"/requests/{request_id}/clarification-request", {**form, "question": " "})
     assert page.status_code == 422
     assert "The request data is invalid." in page.text
+
+
+def test_manager_cannot_propose_fields(tmp_path) -> None:
+    # m3, final review: propose_fields only resolved identity, so a manager could trigger a
+    # model call. It must be gated by CREATE_DRAFT.allowed_roles like create_draft is.
+    client, _ = _setup(tmp_path, provider=_AssertNotCalledProvider())
+    _act_as(client, "manager-morgan")
+    response = _post(client, "/requests/propose", {"description": DESCRIPTION})
+    assert response.status_code == 403
+    assert "This action is not available to the selected identity." in response.text
+
+
+def test_over_limit_description_is_422_with_entered_text_and_no_model_call(tmp_path) -> None:
+    # m4, final review: description is capped only by the HTML maxlength (1000) on
+    # request_new.html. Server side, an over-limit description must be a normal 422 form error.
+    client, _ = _setup(tmp_path, provider=_AssertNotCalledProvider())
+    _act_as(client, "employee-alice")
+    over_limit = "x" * 1001
+    page = _post(client, "/requests/propose", {"description": over_limit})
+    assert page.status_code == 422
+    assert "The request data is invalid." in page.text
+    assert over_limit in page.text
+
+
+def test_hr_clarification_question_is_kept_in_the_textarea_after_a_422(tmp_path) -> None:
+    # m5, final review: request.html re-rendered a blank textarea after a clarification error,
+    # losing what HR typed. The entered question must come back in the form.
+    client, demo = _setup(tmp_path)
+    request_id = _submitted(demo)
+    _act_as(client, "hr-harper")
+    form = _form(
+        client.get(f"/requests/{request_id}").text, f"/requests/{request_id}/clarification-request"
+    )
+    over_limit = "x" * 501
+    page = _post(
+        client, f"/requests/{request_id}/clarification-request", {**form, "question": over_limit}
+    )
+    assert page.status_code == 422
+    assert over_limit in page.text
 
 
 def test_clarification_round_trip_through_forms(tmp_path) -> None:

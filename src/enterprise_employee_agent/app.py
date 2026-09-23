@@ -87,6 +87,11 @@ SCRIPTED_FIXTURE_PATH = DATA_DIR / "demo" / "scripted-v1.json"
 DEFAULT_DATABASE_PATH = Path("var/demo.sqlite")
 OFFLINE_MODEL = ModelConfig(model_id="offline/scripted", max_tokens=1, timeout_seconds=1.0)
 EXCERPT_CHARS = 800
+# Server-side mirrors of the HTML maxlength attributes on ask.html and request_new.html: the
+# templates cap input for UX, but only these checks stop an over-limit call from reaching the
+# model (m4, final review).
+QUESTION_MAX_LENGTH = 1000
+LEAVE_DESCRIPTION_MAX_LENGTH = 1000
 
 type Clock = Callable[[], datetime]
 type IdFactory = Callable[[str], str]
@@ -129,6 +134,7 @@ class IdentityOption:
     identity_id: str
     display_name: str
     role: ActorRole
+    can_create_request: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,6 +244,7 @@ def _option(identity: DemoIdentity) -> IdentityOption:
         identity_id=identity.identity_id,
         display_name=identity.display_name,
         role=identity.role,
+        can_create_request=identity.role in COMMAND_SPECS[CommandName.CREATE_DRAFT].allowed_roles,
     )
 
 
@@ -483,6 +490,8 @@ class DemoApplication:
 
     def ask(self, actor_id: str, question: str) -> AskResult:
         self._actor(actor_id)
+        if len(question) > QUESTION_MAX_LENGTH:
+            raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
         outcome = answer_for_actor(
             question,
             manifest=self._manifest,
@@ -498,7 +507,11 @@ class DemoApplication:
         )
 
     def propose_fields(self, actor_id: str, text: str) -> FieldProposalOutcome:
-        self._actor(actor_id)
+        actor = self._actor(actor_id)
+        if actor.role not in COMMAND_SPECS[CommandName.CREATE_DRAFT].allowed_roles:
+            raise WorkflowError(WorkflowErrorCode.FORBIDDEN)
+        if len(text) > LEAVE_DESCRIPTION_MAX_LENGTH:
+            raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED)
         return propose_leave_fields(
             text,
             manifest=self._manifest,

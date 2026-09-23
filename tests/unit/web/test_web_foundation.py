@@ -5,6 +5,7 @@ from __future__ import annotations
 import itertools
 import json
 import re
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from enterprise_employee_agent.llm.provider import (
     ProviderResponse,
 )
 from enterprise_employee_agent.llm.scripted import ScriptedProvider
+from enterprise_employee_agent.storage.sqlite import SQLiteLeaveRepository
 from enterprise_employee_agent.web.errors import http_status_for
 from enterprise_employee_agent.web.server import create_app
 
@@ -203,6 +205,35 @@ def test_model_text_markup_is_escaped(tmp_path) -> None:
     assert "&lt;script&gt;alert(" in page.text
 
 
+class _AssertNotCalledProvider:
+    def complete(self, request: AnswerRequest) -> ProviderResponse:
+        raise AssertionError("provider must not be called for over-limit input")
+
+
+def test_over_limit_question_is_422_with_entered_text_and_no_model_call(tmp_path) -> None:
+    # m4, final review: question is capped only by the HTML maxlength (1000) on ask.html. Server
+    # side, an over-limit question must be a normal 422 form error, not a call to the provider.
+    client, _ = _setup(tmp_path, provider=_AssertNotCalledProvider())
+    _act_as(client, "employee-alice")
+    over_limit = "x" * 1001
+    page = client.post("/ask", data={"question": over_limit}, headers=ORIGIN)
+    assert page.status_code == 422
+    assert "The request data is invalid." in page.text
+    assert over_limit in page.text
+
+
+def test_nav_new_request_link_is_driven_by_can_create_request(tmp_path) -> None:
+    # T5, final review: web/ must not check roles in the template; the link is driven by a flag
+    # DemoApplication computes from the same allowed_roles as CREATE_DRAFT.
+    client, _ = _setup(tmp_path)
+    _act_as(client, "employee-alice")
+    assert '<a href="/requests/new">New request</a>' in client.get("/").text
+    _act_as(client, "manager-morgan")
+    assert '<a href="/requests/new">New request</a>' not in client.get("/").text
+    _act_as(client, "hr-harper")
+    assert '<a href="/requests/new">New request</a>' not in client.get("/").text
+
+
 def test_unknown_route_uses_the_not_found_page(tmp_path) -> None:
     client, _ = _setup(tmp_path)
     response = client.get("/no-such-page")
@@ -256,3 +287,46 @@ def test_pages_have_labels_for_every_text_control(tmp_path) -> None:
     page = client.get("/").text
     for control_id in re.findall(r'<(?:textarea|select|input)[^>]* id="([a-z_]+)"', page):
         assert f'for="{control_id}"' in page, control_id
+
+
+def test_foreign_host_header_is_rejected_and_changes_nothing(tmp_path) -> None:
+    # I1, final review: require_same_origin trusts request.base_url, which FastAPI builds from
+    # the client Host header. TrustedHostMiddleware must reject a foreign Host before that check,
+    # and before any DemoApplication call, or a DNS-rebinding page could drive every POST.
+    client, demo = _setup(tmp_path)
+    get_response = client.get("/identity", headers={"host": "evil.example:8000"})
+    assert get_response.status_code == 400
+    post_response = client.post(
+        "/identity",
+        data={"identity_id": "hr-harper"},
+        headers={"host": "evil.example:8000", "origin": "http://evil.example:8000"},
+        follow_redirects=False,
+    )
+    assert post_response.status_code == 400
+    assert "set-cookie" not in post_response.headers
+    assert demo.requests_for("hr-harper") == ()
+
+
+def test_known_hosts_still_work(tmp_path) -> None:
+    client, _ = _setup(tmp_path)
+    for host in ("127.0.0.1", "localhost", "testserver"):
+        response = client.get("/identity", headers={"host": host})
+        assert response.status_code == 200, host
+
+
+def test_storage_error_on_request_list_is_a_generic_503(tmp_path, monkeypatch) -> None:
+    # m6, final review: an end-to-end HTTP check that a storage failure on a read never leaks a
+    # traceback or SQL into the response body.
+    client, _ = _setup(tmp_path)
+    _act_as(client, "employee-alice")
+
+    def broken(self):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(SQLiteLeaveRepository, "list_requests", broken)
+    response = client.get("/requests")
+    assert response.status_code == 503
+    assert "The demo storage is unavailable; try again." in response.text
+    assert "database is locked" not in response.text
+    assert "Traceback" not in response.text
+    assert "sqlite3" not in response.text

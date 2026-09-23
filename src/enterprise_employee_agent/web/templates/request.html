@@ -59,7 +59,7 @@
   <input type="hidden" name="idempotency_key" value="{{ keys.request_clarification }}">
   <input type="hidden" name="expected_version" value="{{ detail.version }}">
   <label for="question">Question for the employee (operational only)</label>
-  <textarea id="question" name="question" rows="3" maxlength="500" required{% if error %} aria-describedby="form-error"{% endif %}></textarea>
+  <textarea id="question" name="question" rows="3" maxlength="500" required{% if error %} aria-describedby="form-error"{% endif %}>{{ clarification_question or "" }}</textarea>
   <button type="submit">Request clarification</button>
 </form>
 {% endif %}

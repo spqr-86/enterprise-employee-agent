@@ -90,6 +90,17 @@ def test_identities_list_all_six_manifest_identities(tmp_path) -> None:
     assert options[5].role is ActorRole.HR
 
 
+def test_can_create_request_matches_create_draft_allowed_roles(tmp_path) -> None:
+    # T5, final review: base.html used to check role.value == "employee" itself; web/ must not
+    # check roles, so the nav link is driven by this flag, computed from the same allowed_roles
+    # CREATE_DRAFT uses everywhere else.
+    demo = _demo(tmp_path)
+    by_id = {option.identity_id: option for option in demo.identities()}
+    assert by_id["employee-alice"].can_create_request is True
+    assert by_id["manager-morgan"].can_create_request is False
+    assert by_id["hr-harper"].can_create_request is False
+
+
 def test_identity_resolves_known_and_rejects_unknown(tmp_path) -> None:
     demo = _demo(tmp_path)
     assert demo.identity("hr-harper").display_name == "Harper HR"

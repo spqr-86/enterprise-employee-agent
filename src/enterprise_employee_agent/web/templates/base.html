@@ -28,7 +28,7 @@
     <nav aria-label="Main">
       <a href="/">Ask</a>
       <a href="/requests">Requests</a>
-      {% if header.identity and header.identity.role.value == "employee" %}<a href="/requests/new">New request</a>{% endif %}
+      {% if header.identity and header.identity.can_create_request %}<a href="/requests/new">New request</a>{% endif %}
     </nav>
   </header>
   <main id="main">
