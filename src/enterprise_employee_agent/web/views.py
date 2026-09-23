@@ -9,7 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from enterprise_employee_agent.app import AskResult, CitationInfo, IdentityOption, LeaveForm
+from enterprise_employee_agent.app import (
+    AskResult,
+    CitationInfo,
+    IdentityOption,
+    LeaveForm,
+    RequestView,
+)
 from enterprise_employee_agent.leave.access_policy import LeaveProjection
 from enterprise_employee_agent.leave.assistant import (
     AssistantOutcomeKind,
@@ -160,10 +166,8 @@ class RequestDetailView:
     form: LeaveForm | None
 
 
-def detail_view(view) -> RequestDetailView:  # type: ignore[no-untyped-def]
+def detail_view(view: RequestView) -> RequestDetailView:
     """Render exactly the fields of the role projection ``project_for`` returned."""
-
-    view = view
     projection = view.projection
     data = projection.model_dump(mode="json")
     fields = tuple(
