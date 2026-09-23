@@ -462,3 +462,12 @@
   mapping, ask page; 434 tests), `c6a70bd` leave request pages (draft, preview, confirmation, HR
   actions, clarification) + `fa75a10` fix round 1 (typed `detail_view`). 449 tests green. Next:
   Task 7 (e2e/smoke, brief extracted), final whole-branch review, PR after owner OK.
+- 2026-09-23 (session 21): Issue #14 Task 7 done (`1049b39`: e2e UI journey + stale-confirmation
+  test, offline smoke start), task review clean. Final whole-branch review (opus): "with fixes" —
+  same-origin check trusted the client `Host` (DNS rebinding) and README had no demo section; one
+  fix wave `6704cb6`+`51e37e7`: `TrustedHostMiddleware` (127.0.0.1/localhost/testserver),
+  role gate on `propose_fields` + `can_create_request` flag instead of the template role check,
+  server-side caps on question/description, HR clarification text kept after 422, e2e 503 test,
+  README "Demo UI", decision 0006 note. Scoped re-review: all 7 addressed. 461 tests, smoke 10,
+  eval-offline 8/8 + 8/8 (plan text said 7/7 — stale). Citation `href` scheme check parked
+  (trusted manifest). Next: manual a11y checklist (`make demo`), push + PR after owner OK.
