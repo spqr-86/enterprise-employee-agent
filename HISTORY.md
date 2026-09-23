@@ -471,3 +471,11 @@
   README "Demo UI", decision 0006 note. Scoped re-review: all 7 addressed. 461 tests, smoke 10,
   eval-offline 8/8 + 8/8 (plan text said 7/7 — stale). Citation `href` scheme check parked
   (trusted manifest). Next: manual a11y checklist (`make demo`), push + PR after owner OK.
+
+### 2026-09-23 — Issue #14 Step 4 (automated a11y) + fixes
+- No Chrome extension in session → checklist automated with Playwright + axe (headless): JS on/off
+  journeys, 360 px, axe per page, wording scan, Tab walk. Found: 360 px overflow (long request id in
+  `<code>`), `.table-wrap` not keyboard reachable (axe serious), banner outside landmarks. Fixed in
+  `cdbf505` (+3 tests); re-run: 0 overflow, 0 axe violations. 464 tests, smoke 10, eval 8/8 + 8/8.
+  Known limitation: whitespace-only question/description re-renders silently. Next: owner's
+  keyboard-only walk, then push + PR after OK.
