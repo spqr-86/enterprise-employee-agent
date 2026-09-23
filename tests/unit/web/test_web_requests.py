@@ -304,3 +304,16 @@ def test_clarification_round_trip_through_forms(tmp_path) -> None:
     assert demo.request_for("employee-alice", request_id).projection.status is (
         LeaveStatus.SUBMITTED
     )
+
+
+def test_scrollable_tables_are_keyboard_reachable_named_regions(tmp_path) -> None:
+    client, demo = _setup(tmp_path)
+    request_id = _submitted(demo)
+    _act_as(client, "hr-harper")
+    for path in ("/requests", f"/requests/{request_id}"):
+        wraps = re.findall(r'<div class="table-wrap"[^>]*>', client.get(path).text)
+        assert wraps, path
+        for wrap in wraps:
+            assert 'tabindex="0"' in wrap, path
+            assert 'role="region"' in wrap, path
+            assert re.search(r'aria-(label|labelledby)="[^"]+"', wrap), path

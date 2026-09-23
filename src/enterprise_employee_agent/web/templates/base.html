@@ -8,8 +8,8 @@
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
-  <p class="banner" role="note">Educational demo — not a real HR system and not connected to GitLab, Tilt, or any HRIS.</p>
   <header>
+    <p class="banner" role="note">Educational demo — not a real HR system and not connected to GitLab, Tilt, or any HRIS.</p>
     {% if header.identity %}
     <p class="who">Acting as <strong>{{ header.identity.display_name }}</strong> (<code>{{ header.identity.identity_id }}</code>) · role: <strong>{{ header.identity.role.value }}</strong></p>
     {% else %}

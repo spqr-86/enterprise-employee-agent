@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Requests · Leave assistant demo{% endblock %}
 {% block content %}
-<h1>{{ heading }}</h1>
+<h1 id="page-heading">{{ heading }}</h1>
 {% if rows %}
-<div class="table-wrap">
+<div class="table-wrap" role="region" aria-labelledby="page-heading" tabindex="0">
 <table>
   <thead><tr><th scope="col">Request</th><th scope="col">Employee</th><th scope="col">Status</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Type</th></tr></thead>
   <tbody>

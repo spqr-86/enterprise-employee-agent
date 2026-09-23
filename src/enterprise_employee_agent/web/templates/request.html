@@ -69,8 +69,8 @@
 {% endif %}
 
 {% if detail.history %}
-<h2>{{ detail.history_label }}</h2>
-<div class="table-wrap">
+<h2 id="history-heading">{{ detail.history_label }}</h2>
+<div class="table-wrap" role="region" aria-labelledby="history-heading" tabindex="0">
 <table>
   <thead><tr><th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">New status</th><th scope="col">Version</th></tr></thead>
   <tbody>

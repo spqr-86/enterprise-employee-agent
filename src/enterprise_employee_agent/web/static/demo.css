@@ -133,6 +133,10 @@ button:disabled {
   padding: 0.5rem;
 }
 
+code {
+  overflow-wrap: anywhere;
+}
+
 pre {
   white-space: pre-wrap;
   word-break: break-word;

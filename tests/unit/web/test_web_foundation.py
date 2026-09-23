@@ -330,3 +330,18 @@ def test_storage_error_on_request_list_is_a_generic_503(tmp_path, monkeypatch) -
     assert "database is locked" not in response.text
     assert "Traceback" not in response.text
     assert "sqlite3" not in response.text
+
+
+def test_demo_banner_sits_inside_the_header_landmark(tmp_path) -> None:
+    client, _ = _setup(tmp_path)
+    page = client.get("/identity").text
+    header = re.search(r"<header>.*?</header>", page, re.S)
+    assert header is not None
+    assert 'class="banner"' in header[0]
+
+
+def test_code_identifiers_wrap_on_narrow_screens() -> None:
+    css = (Path(create_app.__code__.co_filename).parent / "static" / "demo.css").read_text()
+    rule = re.search(r"(?m)^code\s*\{([^}]*)\}", css)
+    assert rule is not None
+    assert "overflow-wrap: anywhere" in rule[1]
