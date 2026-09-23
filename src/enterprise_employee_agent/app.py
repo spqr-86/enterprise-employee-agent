@@ -16,24 +16,54 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Mapping
+import sqlite3
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 import httpx
+from pydantic import ValidationError
 
 from enterprise_employee_agent.evals.live import DECISION_MODEL
 from enterprise_employee_agent.knowledge.access import DocumentAccessMap, load_document_access_map
 from enterprise_employee_agent.knowledge.corpus import DATA_DIR, load_manifest
-from enterprise_employee_agent.leave.access_policy import resolve_identity
+from enterprise_employee_agent.leave.access_policy import (
+    LeaveProjection,
+    can_view,
+    project_for,
+    resolve_identity,
+)
+from enterprise_employee_agent.leave.assistant import (
+    create_draft_from_fields,
+    provide_clarification_from_fields,
+)
 from enterprise_employee_agent.leave.contracts import (
+    COMMAND_SPECS,
+    IDENTIFIER_ADAPTER,
     ActorRole,
+    CancelDraftInput,
+    ClientCommandInput,
+    CommandName,
+    ConfirmationEnvelope,
+    ConfirmSubmitInput,
     DemoAccessManifest,
     DemoIdentity,
+    LeaveRequest,
+    LeaveRequestPayload,
+    LeaveRequestPreview,
+    RequestClarificationInput,
+    StartProcessingInput,
+    UpdateDraftInput,
+    WorkflowError,
+    WorkflowErrorCode,
+    bind_server_command,
+    build_leave_preview,
     load_demo_access_manifest,
 )
+from enterprise_employee_agent.leave.state_machine import transition_target
 from enterprise_employee_agent.llm.openrouter import OpenRouterProvider
 from enterprise_employee_agent.llm.provider import (
     AnswerProvider,
@@ -103,6 +133,51 @@ class CitationInfo:
     title: str
     source_url: str | None
     excerpt: str
+
+
+@dataclass(frozen=True, slots=True)
+class LeaveForm:
+    """Raw leave form strings; the domain payload validates them, never the web layer."""
+
+    start_date: str
+    end_date: str
+    request_type: str
+    employee_comment: str = ""
+
+    def to_payload(self) -> LeaveRequestPayload:
+        try:
+            return LeaveRequestPayload(
+                start_date=self.start_date,
+                end_date=self.end_date,
+                request_type=self.request_type,
+                employee_comment=self.employee_comment or None,
+            )
+        except ValidationError as error:
+            raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED) from error
+
+
+@dataclass(frozen=True, slots=True)
+class RequestView:
+    projection: LeaveProjection
+    preview: LeaveRequestPreview | None
+    actions: frozenset[CommandName]
+
+
+def _available_actions(actor: DemoIdentity, request: LeaveRequest) -> frozenset[CommandName]:
+    """Commands this role has and the state machine accepts from the current status."""
+
+    available: set[CommandName] = set()
+    for command in CommandName:
+        if command is CommandName.CREATE_DRAFT:
+            continue
+        if actor.role not in COMMAND_SPECS[command].allowed_roles:
+            continue
+        try:
+            transition_target(request, command)
+        except WorkflowError:
+            continue
+        available.add(command)
+    return frozenset(available)
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +283,187 @@ class DemoApplication:
 
     def _actor(self, actor_id: str) -> DemoIdentity:
         return resolve_identity(self._manifest, actor_id)
+
+    @contextmanager
+    def _domain_errors(self) -> Iterator[None]:
+        try:
+            yield
+        except sqlite3.Error as error:
+            raise WorkflowError(WorkflowErrorCode.STORAGE_UNAVAILABLE) from error
+        except ValidationError as error:
+            raise WorkflowError(WorkflowErrorCode.VALIDATION_FAILED) from error
+
+    @staticmethod
+    def _request_id(value: str) -> str:
+        try:
+            return IDENTIFIER_ADAPTER.validate_python(value)
+        except ValidationError as error:
+            raise WorkflowError(WorkflowErrorCode.NOT_FOUND) from error
+
+    def _execute(self, actor_id: str, command_input: ClientCommandInput) -> LeaveRequest:
+        command = bind_server_command(self._manifest, actor_id, command_input)
+        return self._repository.execute(
+            self._manifest,
+            command,
+            event_id=self._id_factory("evt"),
+            occurred_at=self._clock(),
+        )
+
+    def create_draft(
+        self, actor_id: str, form: LeaveForm, idempotency_key: str
+    ) -> LeaveRequestPreview:
+        self._actor(actor_id)
+        with self._domain_errors():
+            return create_draft_from_fields(
+                form.to_payload(),
+                repository=self._repository,
+                manifest=self._manifest,
+                actor_id=actor_id,
+                request_id=self._id_factory("leave"),
+                idempotency_key=idempotency_key,
+                event_id=self._id_factory("evt"),
+                occurred_at=self._clock(),
+            )
+
+    def update_draft(
+        self,
+        actor_id: str,
+        request_id: str,
+        expected_version: int,
+        form: LeaveForm,
+        idempotency_key: str,
+    ) -> LeaveRequestPreview:
+        self._actor(actor_id)
+        request_id = self._request_id(request_id)
+        with self._domain_errors():
+            updated = self._execute(
+                actor_id,
+                UpdateDraftInput(
+                    idempotency_key=idempotency_key,
+                    request_id=request_id,
+                    expected_version=expected_version,
+                    payload=form.to_payload(),
+                ),
+            )
+            return build_leave_preview(updated)
+
+    def cancel_draft(
+        self, actor_id: str, request_id: str, expected_version: int, idempotency_key: str
+    ) -> LeaveProjection:
+        actor = self._actor(actor_id)
+        request_id = self._request_id(request_id)
+        with self._domain_errors():
+            cancelled = self._execute(
+                actor_id,
+                CancelDraftInput(
+                    idempotency_key=idempotency_key,
+                    request_id=request_id,
+                    expected_version=expected_version,
+                ),
+            )
+        return project_for(self._manifest, actor, cancelled)
+
+    def confirm(
+        self,
+        actor_id: str,
+        request_id: str,
+        expected_version: int,
+        payload_digest: str,
+        idempotency_key: str,
+    ) -> LeaveProjection:
+        actor = self._actor(actor_id)
+        request_id = self._request_id(request_id)
+        with self._domain_errors():
+            submitted = self._execute(
+                actor_id,
+                ConfirmSubmitInput(
+                    idempotency_key=idempotency_key,
+                    request_id=request_id,
+                    expected_version=expected_version,
+                    confirmation=ConfirmationEnvelope(
+                        request_id=request_id,
+                        request_version=expected_version,
+                        payload_digest=payload_digest,
+                    ),
+                ),
+            )
+        return project_for(self._manifest, actor, submitted)
+
+    def hr_start(
+        self, actor_id: str, request_id: str, expected_version: int, idempotency_key: str
+    ) -> LeaveProjection:
+        actor = self._actor(actor_id)
+        request_id = self._request_id(request_id)
+        with self._domain_errors():
+            started = self._execute(
+                actor_id,
+                StartProcessingInput(
+                    idempotency_key=idempotency_key,
+                    request_id=request_id,
+                    expected_version=expected_version,
+                ),
+            )
+        return project_for(self._manifest, actor, started)
+
+    def hr_clarify(
+        self,
+        actor_id: str,
+        request_id: str,
+        expected_version: int,
+        question: str,
+        idempotency_key: str,
+    ) -> LeaveProjection:
+        actor = self._actor(actor_id)
+        request_id = self._request_id(request_id)
+        with self._domain_errors():
+            asked = self._execute(
+                actor_id,
+                RequestClarificationInput(
+                    idempotency_key=idempotency_key,
+                    request_id=request_id,
+                    expected_version=expected_version,
+                    question=question,
+                ),
+            )
+        return project_for(self._manifest, actor, asked)
+
+    def employee_clarify(
+        self,
+        actor_id: str,
+        request_id: str,
+        expected_version: int,
+        form: LeaveForm,
+        idempotency_key: str,
+    ) -> LeaveRequestPreview:
+        self._actor(actor_id)
+        request_id = self._request_id(request_id)
+        with self._domain_errors():
+            return provide_clarification_from_fields(
+                form.to_payload(),
+                repository=self._repository,
+                manifest=self._manifest,
+                actor_id=actor_id,
+                request_id=request_id,
+                expected_version=expected_version,
+                idempotency_key=idempotency_key,
+                event_id=self._id_factory("evt"),
+                occurred_at=self._clock(),
+            )
+
+    def request_for(self, actor_id: str, request_id: str) -> RequestView:
+        actor = self._actor(actor_id)
+        request_id = self._request_id(request_id)
+        with self._domain_errors():
+            request = self._repository.get(request_id)
+        if request is None or not can_view(self._manifest, actor, request):
+            raise WorkflowError(WorkflowErrorCode.NOT_FOUND)
+        actions = _available_actions(actor, request)
+        preview = build_leave_preview(request) if CommandName.CONFIRM_SUBMIT in actions else None
+        return RequestView(
+            projection=project_for(self._manifest, actor, request),
+            preview=preview,
+            actions=actions,
+        )
 
 
 def build_demo_application(
