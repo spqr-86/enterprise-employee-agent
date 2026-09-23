@@ -520,3 +520,10 @@ def test_error_catalogue_covers_deterministic_safety_failures() -> None:
     }
     assert set(ERROR_MESSAGES) == set(WorkflowErrorCode)
     assert all("traceback" not in message.casefold() for message in ERROR_MESSAGES.values())
+
+
+def test_storage_unavailable_has_a_safe_generic_message() -> None:
+    assert WorkflowErrorCode.STORAGE_UNAVAILABLE.value == "storage_unavailable"
+    assert ERROR_MESSAGES[WorkflowErrorCode.STORAGE_UNAVAILABLE] == (
+        "The demo storage is unavailable; try again."
+    )

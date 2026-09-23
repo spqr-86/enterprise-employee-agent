@@ -623,3 +623,69 @@ def test_audit_rows_are_append_only(repository, manifest) -> None:
             )
         with pytest.raises(sqlite3.IntegrityError, match="append-only"):
             connection.execute("DELETE FROM audit_events WHERE event_id = ?", ("event-0001",))
+
+
+def _create_at(repository, manifest, *, actor_id, request_id, key, occurred_at):
+    command = bind_server_command(
+        manifest,
+        actor_id,
+        CreateDraftInput(idempotency_key=key, payload=_payload()),
+        generated_request_id=request_id,
+    )
+    return repository.execute(
+        manifest, command, event_id=f"event-{request_id}", occurred_at=occurred_at
+    )
+
+
+def test_list_requests_is_empty_for_a_new_database(repository) -> None:
+    assert repository.list_requests() == ()
+
+
+def test_list_requests_returns_full_records_newest_first(manifest, repository) -> None:
+    older = _create_at(
+        repository,
+        manifest,
+        actor_id="employee-alice",
+        request_id="leave-list-001",
+        key="list-alice-0001",
+        occurred_at=NOW,
+    )
+    newer = _create_at(
+        repository,
+        manifest,
+        actor_id="employee-carol",
+        request_id="leave-list-002",
+        key="list-carol-0001",
+        occurred_at=NOW + timedelta(minutes=1),
+    )
+
+    assert repository.list_requests() == (newer, older)
+
+
+def test_every_repository_call_closes_its_connection(tmp_path, monkeypatch, manifest) -> None:
+    opened: list[sqlite3.Connection] = []
+    real_connect = sqlite3.connect
+
+    def tracking_connect(*args, **kwargs):
+        connection = real_connect(*args, **kwargs)
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(sqlite3, "connect", tracking_connect)
+    repository = SQLiteLeaveRepository(tmp_path / "closing.db")
+    repository.schema_version()
+    repository.get("leave-missing")
+    repository.list_requests()
+    _create_at(
+        repository,
+        manifest,
+        actor_id="employee-alice",
+        request_id="leave-close-001",
+        key="close-alice-0001",
+        occurred_at=NOW,
+    )
+
+    assert len(opened) == 5
+    for connection in opened:
+        with pytest.raises(sqlite3.ProgrammingError):
+            connection.execute("SELECT 1")
