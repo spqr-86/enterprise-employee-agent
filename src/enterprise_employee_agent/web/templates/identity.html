@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Choose identity · Leave assistant demo{% endblock %}
+{% block content %}
+<h1>Choose a demo identity</h1>
+<p>All identities are synthetic. Choosing one is not authentication; it shows what each role may see and do.</p>
+<ul class="choices">
+  {% for option in header.identities %}
+  <li>
+    <form method="post" action="/identity">
+      <input type="hidden" name="identity_id" value="{{ option.identity_id }}">
+      <button type="submit">{{ option.display_name }} — {{ option.role.value }}</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}

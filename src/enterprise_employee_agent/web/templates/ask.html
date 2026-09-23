@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Ask · Leave assistant demo{% endblock %}
+{% block content %}
+<h1>Ask about leave policy</h1>
+<form method="post" action="/ask">
+  <label for="question">Your question</label>
+  <textarea id="question" name="question" rows="3" maxlength="1000" required>{{ question }}</textarea>
+  <button type="submit">Ask</button>
+</form>
+{% if suggestions %}
+<h2>Scripted questions (offline mode)</h2>
+<ul class="choices">
+  {% for suggestion in suggestions %}
+  <li>
+    <form method="post" action="/ask">
+      <input type="hidden" name="question" value="{{ suggestion }}">
+      <button type="submit">{{ suggestion }}</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% if answer %}
+<section aria-labelledby="answer-heading" class="answer">
+  <h2 id="answer-heading">{{ answer.status_label }}</h2>
+  {% if answer.answer_text %}<p>{{ answer.answer_text }}</p>{% endif %}
+  {% if answer.clarifying_question %}<p><strong>The assistant asks:</strong> {{ answer.clarifying_question }}</p>{% endif %}
+  <p class="guidance">{{ answer.guidance }}</p>
+  {% if answer.citations %}
+  <h3>Evidence</h3>
+  <ul class="evidence">
+    {% for citation in answer.citations %}
+    <li>
+      {% if citation.source_url %}<a href="{{ citation.source_url }}">{{ citation.title }}</a>{% else %}<code>{{ citation.document_id }}</code> — internal synthetic document{% endif %}
+      <details>
+        <summary>Show excerpt</summary>
+        <pre>{{ citation.excerpt }}</pre>
+      </details>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
+<p class="fine">Answers use only handbook excerpts your role may read. They are not eligibility decisions.</p>
+{% endblock %}

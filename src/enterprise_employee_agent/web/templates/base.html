@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Leave assistant demo{% endblock %}</title>
+  <link rel="stylesheet" href="/static/demo.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <p class="banner" role="note">Educational demo — not a real HR system and not connected to GitLab, Tilt, or any HRIS.</p>
+  <header>
+    {% if header.identity %}
+    <p class="who">Acting as <strong>{{ header.identity.display_name }}</strong> (<code>{{ header.identity.identity_id }}</code>) · role: <strong>{{ header.identity.role.value }}</strong></p>
+    {% else %}
+    <p class="who">No identity selected</p>
+    {% endif %}
+    <p class="mode">Model mode: <strong>{{ header.mode_label }}</strong></p>
+    <form method="post" action="/identity" class="switcher">
+      <label for="identity_id">Switch identity</label>
+      <select id="identity_id" name="identity_id">
+        {% for option in header.identities %}
+        <option value="{{ option.identity_id }}"{% if header.identity and option.identity_id == header.identity.identity_id %} selected{% endif %}>{{ option.display_name }} ({{ option.role.value }})</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Switch</button>
+    </form>
+    <nav aria-label="Main">
+      <a href="/">Ask</a>
+      <a href="/requests">Requests</a>
+      {% if header.identity and header.identity.role.value == "employee" %}<a href="/requests/new">New request</a>{% endif %}
+    </nav>
+  </header>
+  <main id="main">
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    document.addEventListener("submit", function (event) {
+      var button = event.target.querySelector("button[type=submit]");
+      if (button) { button.disabled = true; button.textContent = "Sending…"; }
+    });
+  </script>
+</body>
+</html>
