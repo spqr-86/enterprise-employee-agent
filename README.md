@@ -37,7 +37,8 @@ fixture and no network call is made. Requests are stored in SQLite in the named 
 `demo-state`, so they survive `docker compose restart` and `docker compose down` / `up`;
 `docker compose down -v` deletes them.
 
-Live mode: copy `.env.example` to `.env` and set `OPENROUTER_API_KEY`. Live mode has no budget
+Live mode: copy `.env.example` to `.env` and set `DEMO_OPENROUTER_API_KEY` (a separate name, so a key
+exported in your shell is not picked up by accident). Live mode has no budget
 guard — enable it locally and deliberately. The port is bound to `127.0.0.1` only.
 
 ## Demo flow
@@ -46,9 +47,11 @@ Pick an identity in the header — the switcher is a demo convenience, not authe
 cookie is unsigned by design.
 
 1. **Employee** (`employee-alice`): ask a leave question, get an answer with citations; describe
-   the leave in free text → the model proposes fields → check and save a draft.
-2. Confirm the draft. Editing it afterwards bumps its version; a confirmation made for the old
-   version is rejected with "The preview changed; review and confirm it again".
+   the leave in free text → the model proposes fields → check and save a draft. Offline mode
+   answers only the scripted questions and description offered as buttons in the UI.
+2. Confirm and submit the draft. If the draft is edited after its preview was shown (for example in
+   another tab), confirming the old preview is rejected with "The preview changed; review and
+   confirm it again".
 3. **HR** (`hr-harper`): start processing, request a clarification.
 4. **Employee** answers the clarification.
 5. **Manager** (`manager-morgan`, `manager-riley`): sees only direct reports, and only the
@@ -79,7 +82,7 @@ a paid API, and builds the Docker image.
   groundedness 6/7, task success 5/7, abstention 1/1, prompt injection PASS. Verdict
   **INVESTIGATE**. Failures: invented table rows for Texas; answered before asking for missing
   data. Report: [`experiments/issue-8/`](experiments/issue-8/20260914T145319Z-report.md).
-- The set is small (9 cases). A larger dataset with a held-out live evaluation is not done yet
+- The set is small: 16 cases, 9 of which call the model. A larger dataset with a held-out live evaluation is not done yet
   ([Issue #16](https://github.com/spqr-86/enterprise-employee-agent/issues/16)).
 
 ## Data

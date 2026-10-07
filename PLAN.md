@@ -209,4 +209,6 @@ tests, corpus data, experiments, and project documentation remain top-level supp
 - [x] Docker Compose starts the application with persistent local state.
 - [x] CI runs format, lint, unit, integration, and offline smoke checks without a paid API.
 - [ ] `README.md` documents setup, demo flow, architecture, eval results, data licence, local-only workflow, and known limits.
+  (Open until Issue #16: README has setup, demo flow, data licence, limits and the 9-case baseline;
+  final held-out eval results land with #16.)
 - [x] A clean clone can be launched by following the README without undocumented steps.

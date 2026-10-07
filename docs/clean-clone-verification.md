@@ -35,7 +35,7 @@ key pattern requires 8–200 characters. That is the validation working, not a p
 
 `git grep` for OpenRouter key and `api_key = "…"` patterns finds only test placeholders in
 `docs/superpowers/plans/` (`sk-or-test-secret-value`, `sk-test-not-used`). `.env.example` has an
-empty `OPENROUTER_API_KEY`; `.env` is git- and docker-ignored.
+empty `DEMO_OPENROUTER_API_KEY` (compose maps it to `OPENROUTER_API_KEY` inside the container); `.env` is git- and docker-ignored.
 
 ## Not covered
 
