@@ -1,0 +1,12 @@
+<label for="start_date">Start date</label>
+<input id="start_date" name="start_date" type="date" value="{{ form.start_date }}" required{% if error %} aria-describedby="form-error"{% endif %}>
+<label for="end_date">End date</label>
+<input id="end_date" name="end_date" type="date" value="{{ form.end_date }}" required{% if error %} aria-describedby="form-error"{% endif %}>
+<label for="request_type">Leave type</label>
+<select id="request_type" name="request_type" required{% if error %} aria-describedby="form-error"{% endif %}>
+  <option value="">Choose…</option>
+  <option value="continuous"{% if form.request_type == "continuous" %} selected{% endif %}>Continuous</option>
+  <option value="intermittent"{% if form.request_type == "intermittent" %} selected{% endif %}>Intermittent</option>
+</select>
+<label for="employee_comment">Comment (operational details only — no medical information)</label>
+<textarea id="employee_comment" name="employee_comment" rows="3" maxlength="500">{{ form.employee_comment }}</textarea>

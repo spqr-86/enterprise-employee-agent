@@ -1,4 +1,4 @@
-.PHONY: sync check test check-corpus eval-smoke eval-offline eval
+.PHONY: sync check test check-corpus eval-smoke eval-offline eval demo
 
 sync:
 	uv sync --locked
@@ -21,3 +21,6 @@ eval-offline:
 
 eval:
 	uv run --locked python -m enterprise_employee_agent.evals.live --confirm-spend
+
+demo:
+	uv run --locked uvicorn enterprise_employee_agent.web.server:create_app_from_env --factory --host 127.0.0.1 --port 8000

@@ -101,6 +101,7 @@ class WorkflowErrorCode(StrEnum):
     INVALID_TRANSITION = "invalid_transition"
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
     SENSITIVE_CONTENT_REJECTED = "sensitive_content_rejected"
+    STORAGE_UNAVAILABLE = "storage_unavailable"
 
 
 ERROR_MESSAGES: dict[WorkflowErrorCode, str] = {
@@ -115,6 +116,7 @@ ERROR_MESSAGES: dict[WorkflowErrorCode, str] = {
     WorkflowErrorCode.SENSITIVE_CONTENT_REJECTED: (
         "Remove medical details or documents and provide operational information only."
     ),
+    WorkflowErrorCode.STORAGE_UNAVAILABLE: "The demo storage is unavailable; try again.",
 }
 
 

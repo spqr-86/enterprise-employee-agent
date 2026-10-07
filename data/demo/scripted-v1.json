@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "note": "Hand-written offline demo script for Issue #14. Not a recording of a real model.",
+  "questions": [
+    {
+      "text": "How long is parental leave in the US?",
+      "response": {
+        "status": "answered",
+        "answer_text": "The US leave page lists Parental Leave as 16 weeks, paid 100% by GitLab minus any State Disability and/or Paid Family Leave benefits.",
+        "citations": ["people-policies/leave-of-absence/us.md"],
+        "clarifying_question": null
+      }
+    },
+    {
+      "text": "What is a leave of absence?",
+      "response": {
+        "status": "answered",
+        "answer_text": "The company-wide page describes leave as time away from work to recover from a serious health condition, care for a family member, bond with a new child, or serve in the military.",
+        "citations": ["people-policies/leave-of-absence/_index.md"],
+        "clarifying_question": null
+      }
+    },
+    {
+      "text": "Am I eligible for FMLA leave?",
+      "response": {
+        "status": "escalated",
+        "answer_text": "The US page lists the FMLA requirements as 12 months of continuous service and 1250 hours worked in the year before the leave starts. The assistant cannot check your service or hours.",
+        "citations": ["people-policies/leave-of-absence/us.md"],
+        "clarifying_question": null
+      }
+    }
+  ],
+  "leave_descriptions": [
+    {
+      "text": "I need continuous leave from 2026-10-01 to 2026-10-05 for a family matter.",
+      "response": {
+        "start_date": "2026-10-01",
+        "end_date": "2026-10-05",
+        "request_type": "continuous",
+        "employee_comment": "Family matter."
+      }
+    }
+  ]
+}

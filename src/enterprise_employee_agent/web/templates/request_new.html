@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}New request · Leave assistant demo{% endblock %}
+{% block content %}
+<h1>New leave request</h1>
+<p>Describe the leave in your own words: the dates and whether it is continuous or intermittent. Do not include medical details. The assistant pre-fills a form for you to check. Nothing is saved until you save the draft.</p>
+{% if error %}<p id="form-error" class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/requests/propose">
+  <label for="description">Description</label>
+  <textarea id="description" name="description" rows="4" maxlength="1000" required{% if error %} aria-describedby="form-error"{% endif %}>{{ description or "" }}</textarea>
+  <button type="submit">Pre-fill the form</button>
+</form>
+{% if suggestions %}
+<h2>Scripted descriptions (offline mode)</h2>
+<ul class="choices">
+  {% for suggestion in suggestions %}
+  <li>
+    <form method="post" action="/requests/propose">
+      <input type="hidden" name="description" value="{{ suggestion }}">
+      <button type="submit">{{ suggestion }}</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

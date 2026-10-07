@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -112,8 +114,19 @@ class SQLiteLeaveRepository:
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
+    @contextmanager
+    def _session(self) -> Iterator[sqlite3.Connection]:
+        """One connection per call: commit/rollback as before, then always close it."""
+
+        connection = self._connect()
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
+
     def _migrate(self) -> None:
-        with self._connect() as connection:
+        with self._session() as connection:
             connection.execute(
                 """CREATE TABLE IF NOT EXISTS schema_migrations (
                     version INTEGER PRIMARY KEY,
@@ -153,7 +166,7 @@ class SQLiteLeaveRepository:
             raise RuntimeError("database schema does not match recorded migration version")
 
     def schema_version(self) -> int:
-        with self._connect() as connection:
+        with self._session() as connection:
             row = connection.execute(
                 "SELECT MAX(version) AS version FROM schema_migrations"
             ).fetchone()
@@ -162,8 +175,19 @@ class SQLiteLeaveRepository:
     def get(self, request_id: str) -> LeaveRequest | None:
         """Load an internal full record; callers must authorize before projection or return."""
 
-        with self._connect() as connection:
+        with self._session() as connection:
             return self._get(connection, request_id)
+
+    def list_requests(self) -> tuple[LeaveRequest, ...]:
+        """Load every internal full record, newest first; callers must authorize and project."""
+
+        with self._session() as connection:
+            rows = connection.execute(
+                "SELECT request_id FROM leave_requests ORDER BY updated_at DESC, request_id"
+            ).fetchall()
+            requests = tuple(self._get(connection, row["request_id"]) for row in rows)
+        assert all(request is not None for request in requests)
+        return requests  # type: ignore[return-value]
 
     def execute(
         self,
@@ -179,7 +203,7 @@ class SQLiteLeaveRepository:
         """
 
         bound = _require_bound_command(command)
-        with self._connect() as connection:
+        with self._session() as connection:
             connection.execute("BEGIN IMMEDIATE")
             current = self._get(connection, bound.request_id)
             authorize_command(manifest, bound.actor, bound.input.command, current)

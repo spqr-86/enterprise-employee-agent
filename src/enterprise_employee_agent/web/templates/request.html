@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Request {{ detail.request_id }} · Leave assistant demo{% endblock %}
+{% block content %}
+<h1>Leave request <code>{{ detail.request_id }}</code></h1>
+{% if notice %}<p class="error" role="alert">{{ notice }}</p>{% endif %}
+{% if error %}<p id="form-error" class="error" role="alert">{{ error }}</p>{% endif %}
+<dl class="fields">
+  {% for label, value in detail.fields %}<dt>{{ label }}</dt><dd>{{ value or "—" }}</dd>{% endfor %}
+</dl>
+
+{% if "confirm_submit" in detail.actions %}
+<section aria-labelledby="preview-heading" class="preview">
+  <h2 id="preview-heading">Review and confirm version {{ detail.preview_version }}</h2>
+  <p>You are confirming exactly the data above: version {{ detail.preview_version }}, fingerprint <code>{{ detail.preview_digest }}</code>. If the request changes before you confirm, the confirmation is rejected and you review it again.</p>
+  <form method="post" action="/requests/{{ detail.request_id }}/confirm">
+    <input type="hidden" name="idempotency_key" value="{{ keys.confirm_submit }}">
+    <input type="hidden" name="expected_version" value="{{ detail.preview_version }}">
+    <input type="hidden" name="payload_digest" value="{{ detail.preview_digest }}">
+    <button type="submit">Confirm and submit version {{ detail.preview_version }}</button>
+  </form>
+</section>
+{% endif %}
+
+{% if "update_draft" in detail.actions %}
+<p><a href="/requests/{{ detail.request_id }}/edit">Edit draft</a></p>
+{% endif %}
+
+{% if "cancel_draft" in detail.actions %}
+<form method="post" action="/requests/{{ detail.request_id }}/cancel">
+  <input type="hidden" name="idempotency_key" value="{{ keys.cancel_draft }}">
+  <input type="hidden" name="expected_version" value="{{ detail.version }}">
+  <button type="submit">Cancel draft</button>
+</form>
+{% endif %}
+
+{% if "provide_clarification" in detail.actions %}
+<section aria-labelledby="answer-heading">
+  <h2 id="answer-heading">Answer HR's question</h2>
+  <p>Correct the fields if needed and save. Then confirm the new version above it again.</p>
+  <form method="post" action="/requests/{{ detail.request_id }}/clarification-response">
+    <input type="hidden" name="idempotency_key" value="{{ keys.provide_clarification }}">
+    <input type="hidden" name="expected_version" value="{{ detail.version }}">
+    {% include "_leave_fields.html" %}
+    <button type="submit">Save answer</button>
+  </form>
+</section>
+{% endif %}
+
+{% if "start_processing" in detail.actions %}
+<form method="post" action="/requests/{{ detail.request_id }}/start-processing">
+  <input type="hidden" name="idempotency_key" value="{{ keys.start_processing }}">
+  <input type="hidden" name="expected_version" value="{{ detail.version }}">
+  <button type="submit">Start processing</button>
+</form>
+{% endif %}
+
+{% if "request_clarification" in detail.actions %}
+<form method="post" action="/requests/{{ detail.request_id }}/clarification-request">
+  <input type="hidden" name="idempotency_key" value="{{ keys.request_clarification }}">
+  <input type="hidden" name="expected_version" value="{{ detail.version }}">
+  <label for="question">Question for the employee (operational only)</label>
+  <textarea id="question" name="question" rows="3" maxlength="500" required{% if error %} aria-describedby="form-error"{% endif %}>{{ clarification_question or "" }}</textarea>
+  <button type="submit">Request clarification</button>
+</form>
+{% endif %}
+
+{% if not detail.actions %}
+<p class="fine">No actions are available to this identity for the request in its current status.</p>
+{% endif %}
+
+{% if detail.history %}
+<h2 id="history-heading">{{ detail.history_label }}</h2>
+<div class="table-wrap" role="region" aria-labelledby="history-heading" tabindex="0">
+<table>
+  <thead><tr><th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">New status</th><th scope="col">Version</th></tr></thead>
+  <tbody>
+    {% for row in detail.history %}
+    <tr><td>{{ row.occurred_at }}</td><td>{{ row.actor_id }}</td><td>{{ row.command }}</td><td>{{ row.new_status }}</td><td>{{ row.request_version }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+<p><a href="/requests">Back to requests</a></p>
+{% endblock %}

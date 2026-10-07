@@ -451,3 +451,31 @@
   app, `preview()` folded into `request_for()`, HR list also hides cancelled, web tests on the
   real `DemoApplication`, SQLite connections closed per call). Committed locally as `d5ecb6c`,
   sent to the owner for review. Next: owner OK → push → Issue #14 `ready` → execution.
+- 2026-09-23 (session 19): Issue #14 execution via subagent-driven development on
+  `feat/14-demo-ui`. Tasks 1–4 of 7 done, each passed a task review: `e15fdc2` storage safety
+  (`STORAGE_UNAVAILABLE`, `list_requests`, one closed connection per call), `457be5e` composition
+  root and offline mode, `6cd331e` `DemoApplication` workflow commands and `request_for`,
+  `497cf62` `ask`/`propose_fields`/`requests_for`. 409 tests green. Next: Task 5 (web
+  foundation, CSRF).
+- 2026-09-23 (session 20): Issue #14 Tasks 5–6 done on `feat/14-demo-ui`, each passed a task
+  review: `88e2d56` web foundation (FastAPI, identity cookie, same-origin CSRF check, error
+  mapping, ask page; 434 tests), `c6a70bd` leave request pages (draft, preview, confirmation, HR
+  actions, clarification) + `fa75a10` fix round 1 (typed `detail_view`). 449 tests green. Next:
+  Task 7 (e2e/smoke, brief extracted), final whole-branch review, PR after owner OK.
+- 2026-09-23 (session 21): Issue #14 Task 7 done (`1049b39`: e2e UI journey + stale-confirmation
+  test, offline smoke start), task review clean. Final whole-branch review (opus): "with fixes" —
+  same-origin check trusted the client `Host` (DNS rebinding) and README had no demo section; one
+  fix wave `6704cb6`+`51e37e7`: `TrustedHostMiddleware` (127.0.0.1/localhost/testserver),
+  role gate on `propose_fields` + `can_create_request` flag instead of the template role check,
+  server-side caps on question/description, HR clarification text kept after 422, e2e 503 test,
+  README "Demo UI", decision 0006 note. Scoped re-review: all 7 addressed. 461 tests, smoke 10,
+  eval-offline 8/8 + 8/8 (plan text said 7/7 — stale). Citation `href` scheme check parked
+  (trusted manifest). Next: manual a11y checklist (`make demo`), push + PR after owner OK.
+
+### 2026-09-23 — Issue #14 Step 4 (automated a11y) + fixes
+- No Chrome extension in session → checklist automated with Playwright + axe (headless): JS on/off
+  journeys, 360 px, axe per page, wording scan, Tab walk. Found: 360 px overflow (long request id in
+  `<code>`), `.table-wrap` not keyboard reachable (axe serious), banner outside landmarks. Fixed in
+  `cdbf505` (+3 tests); re-run: 0 overflow, 0 axe violations. 464 tests, smoke 10, eval 8/8 + 8/8.
+  Known limitation: whitespace-only question/description re-renders silently. Next: owner's
+  keyboard-only walk, then push + PR after OK.
