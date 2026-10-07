@@ -172,17 +172,17 @@ Most document chat demos stop at an answer. This one makes the boundary visible:
   `AssistantFailure.detail` may contain model-fabricated document ids and must not be rendered
   as-is by Issue #14's UI. PR #30 squash-merged as `eb2b51d`, hosted CI green; Issues #13 and
   #28 closed; `main` re-verified (366/366 tests, 9/9 smoke).
-- No HTTP/UI or external integration exists yet; the frozen corpus and local workflow remain
-  offline.
+- Issue #14 (server-rendered demo UI, FastAPI + Jinja2) is integrated by PR #31 (squash
+  `33dbb3f`, 2026-10-07); `main` CI green, 464 tests.
+- Issue #15 (packaging): Dockerfile and Compose with the named SQLite volume `demo-state`,
+  non-root image without secrets or database, `.env.example`, CI Docker startup job, English
+  README with setup, demo flow, guarantee-to-test table, eval results, data licence and limits,
+  MIT `LICENSE`. Clean-clone record: `docs/clean-clone-verification.md`. External integrations
+  remain absent; the workflow stays local.
 
 ## 7. Next steps
 
-1. Build the server-rendered FastAPI interface with minimal CSS and no SPA framework, applying
-   `project_for` to every response, closing the `get()`/raw-`sqlite3`-exception gaps carried over
-   from Issue #10, and never rendering `AssistantFailure.detail` as-is (it may contain
-   model-fabricated document ids) (Issue #14).
-2. Complete Docker Compose, offline CI, README, and clean-clone verification (Issue #15).
-3. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
+1. Expand the dataset and run the held-out live evaluation; publish the v0.1 results, failures,
    limits, and release decision (Issue #16).
 
 ## 8. Open decisions
@@ -206,7 +206,7 @@ tests, corpus data, experiments, and project documentation remain top-level supp
 - [ ] Answers cite allowed source material; unsupported eligibility is escalated.
 - [ ] A stale confirmation cannot submit a changed draft.
 - [ ] A reproducible live baseline and held-out report include raw failures and operating metrics.
-- [ ] Docker Compose starts the application with persistent local state.
-- [ ] CI runs format, lint, unit, integration, and offline smoke checks without a paid API.
+- [x] Docker Compose starts the application with persistent local state.
+- [x] CI runs format, lint, unit, integration, and offline smoke checks without a paid API.
 - [ ] `README.md` documents setup, demo flow, architecture, eval results, data licence, local-only workflow, and known limits.
-- [ ] A clean clone can be launched by following the README without undocumented steps.
+- [x] A clean clone can be launched by following the README without undocumented steps.
