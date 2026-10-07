@@ -1,4 +1,4 @@
-.PHONY: sync check test check-corpus eval-smoke eval-offline eval demo
+.PHONY: sync check test check-corpus eval-smoke eval-offline eval demo docker-up docker-down
 
 sync:
 	uv sync --locked
@@ -24,3 +24,9 @@ eval:
 
 demo:
 	uv run --locked uvicorn enterprise_employee_agent.web.server:create_app_from_env --factory --host 127.0.0.1 --port 8000
+
+docker-up:
+	docker compose up --build --detach --wait
+
+docker-down:
+	docker compose down

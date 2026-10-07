@@ -17,8 +17,17 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.12"
-      - run: uv sync --frozen
-      - run: uv run --frozen ruff check .
-      - run: uv run --frozen ruff format --check .
-      - run: uv run --frozen pytest
-      - run: uv run --frozen pytest -m smoke
+      - run: uv sync --locked
+      - run: uv run --locked ruff check .
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked pytest
+      - run: uv run --locked pytest -m smoke
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: docker compose up --build --detach --wait --wait-timeout 60
+      - run: curl --fail --silent --show-error http://127.0.0.1:8000/identity > /dev/null
+      - if: always()
+        run: docker compose down --volumes

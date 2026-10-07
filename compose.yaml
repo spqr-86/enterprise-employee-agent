@@ -1,0 +1,17 @@
+services:
+  demo:
+    build: .
+    image: enterprise-employee-agent:local
+    ports:
+      # Bound to the loopback interface only: the demo has no authentication.
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Offline scripted mode unless DEMO_OPENROUTER_API_KEY is set in .env. A distinct name, so a
+      # key exported in the host shell for `make eval` does not silently switch the demo to live.
+      OPENROUTER_API_KEY: ${DEMO_OPENROUTER_API_KEY:-}
+    volumes:
+      - demo-state:/app/var
+    restart: unless-stopped
+
+volumes:
+  demo-state:
