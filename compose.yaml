@@ -1,0 +1,16 @@
+services:
+  demo:
+    build: .
+    image: enterprise-employee-agent:local
+    ports:
+      # Bound to the loopback interface only: the demo has no authentication.
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Empty = offline scripted mode. Set it in .env to switch to live OpenRouter calls.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    volumes:
+      - demo-state:/app/var
+    restart: unless-stopped
+
+volumes:
+  demo-state:
